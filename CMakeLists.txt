@@ -18,6 +18,9 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
 # add SMTParser subdirectory
 add_subdirectory(SMTParser)
 
+# add src subdirectory
+add_subdirectory(src)
+
 # find GMP library
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GMP REQUIRED gmp)
@@ -28,10 +31,10 @@ file(GLOB_RECURSE SOURCES "src/*.cpp")
 file(GLOB_RECURSE HEADERS "src/*.h")
 
 # create executable file
-add_executable(${PROJECT_NAME} ${SOURCES} ${HEADERS})
+add_executable(smt_parser_comparison src/main.cpp)
 
 # include directories
-target_include_directories(${PROJECT_NAME} PRIVATE 
+target_include_directories(smt_parser_comparison PRIVATE 
     ${CMAKE_SOURCE_DIR}/SMTParser/include
     ${CMAKE_SOURCE_DIR}/src
     ${GMP_INCLUDE_DIRS}
@@ -39,29 +42,23 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 # link libraries
-target_link_libraries(${PROJECT_NAME} PRIVATE 
+target_link_libraries(smt_parser_comparison PRIVATE 
+    smt_parser_lib  # from src directory
     smtparser_static  # SMTParser library
     ${GMP_LIBRARIES}
     ${GMPXX_LIBRARIES}
 )
 
 # set output directories
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+# set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+# set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
+# set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 # install rules
-install(TARGETS ${PROJECT_NAME}
-    RUNTIME DESTINATION bin
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-)
+install(TARGETS smt_parser_comparison DESTINATION bin)
 
 # install header files
 install(DIRECTORY src/
     DESTINATION include
     FILES_MATCHING PATTERN "*.h"
-)
-
-# 添加子目录
-add_subdirectory(src) 
+) 

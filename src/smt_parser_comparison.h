@@ -83,12 +83,10 @@ struct ParseResult {
     double parse_time;             // 解析时间(ms)
     size_t memory_usage;           // 内存使用量(KB)
     size_t ast_node_count;         // AST节点数量
-    size_t syntax_coverage;        // 语法覆盖率(百分比)
-    size_t semantic_checks;        // 语义检查数量
     std::vector<std::string> errors; // 错误信息
 
     ParseResult() : success(false), parse_time(0), memory_usage(0),
-                   ast_node_count(0), syntax_coverage(0), semantic_checks(0) {}
+                   ast_node_count(0) {}
 };
 
 // ======== 解析器接口 ========
@@ -303,8 +301,6 @@ public:
 class ParserWrapper {
 private:
     size_t ast_node_count = 0;
-    size_t syntax_coverage = 0;
-    size_t semantic_checks = 0;
     std::vector<std::string> errors;
     
     // 这里应该放置指向实际SMTParser::Parser的指针
@@ -319,16 +315,6 @@ public:
     // 获取AST节点数量
     size_t getASTNodeCount() const {
         return parser->getNodeCount();
-    }
-    
-    // 获取语法覆盖率
-    size_t getSyntaxCoverage() const {
-        return syntax_coverage;
-    }
-    
-    // 获取语义检查次数
-    size_t getSemanticCheckCount() const {
-        return semantic_checks;
     }
     
     // 获取错误信息

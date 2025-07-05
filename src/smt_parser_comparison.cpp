@@ -14,6 +14,7 @@ namespace SMTComparison {
 // ======== ParserWrapper 实现 ========
 ParserWrapper::ParserWrapper() {
     // 这里应该初始化对实际解析器的引用
+    parser = std::make_shared<SMTParser::Parser>();
 }
 
 ParserWrapper::~ParserWrapper() {
@@ -22,16 +23,7 @@ ParserWrapper::~ParserWrapper() {
 
 bool ParserWrapper::parse(const std::string& filename) {
     // 这里应该调用实际SMTParser的解析函数
-    
-    // 模拟实现，在实际项目中应替换为真正的解析逻辑
-    std::cout << "解析文件: " << filename << std::endl;
-    
-    // 模拟解析过程
-    ast_node_count = 100;  // 示例值
-    syntax_coverage = 95;  // 示例值
-    semantic_checks = 80;  // 示例值
-    
-    return true;  // 示例总是返回成功
+    return parser->parse(filename);
 }
 
 // ======== NativeParser 实现 ========
@@ -54,8 +46,6 @@ ParseResult NativeParser::parse(const std::string& filename) {
     
     // 从解析器中获取更多信息
     result.ast_node_count = parser->getASTNodeCount();
-    result.syntax_coverage = parser->getSyntaxCoverage();
-    result.semantic_checks = parser->getSemanticCheckCount();
     result.errors = parser->getErrors();
     
     return result;
@@ -130,10 +120,6 @@ ParseResult PySMTParser::parse(const std::string& filename) {
             // 读取AST节点数
             std::getline(output, line);
             result.ast_node_count = std::stoul(line.substr(line.find(":") + 1));
-            
-            // pySMT不直接提供语法覆盖率和语义检查数量
-            result.syntax_coverage = 100;  // 假设100%覆盖率
-            result.semantic_checks = result.ast_node_count;  // 假设每个节点一次语义检查
         } else {
             // 读取错误信息
             std::getline(output, line);
@@ -197,16 +183,6 @@ ParseResult ANTLRParser::parse(const std::string& filename) {
         if (line.find("AST节点数:") != std::string::npos) {
             result.ast_node_count = std::stoul(line.substr(line.find(":") + 1));
         }
-        
-        // 尝试解析语法覆盖率
-        if (line.find("语法覆盖率:") != std::string::npos) {
-            result.syntax_coverage = std::stoul(line.substr(line.find(":") + 1));
-        }
-        
-        // 尝试解析语义检查
-        if (line.find("语义检查:") != std::string::npos) {
-            result.semantic_checks = std::stoul(line.substr(line.find(":") + 1));
-        }
     }
     
     output.close();
@@ -216,14 +192,6 @@ ParseResult ANTLRParser::parse(const std::string& filename) {
     if (result.ast_node_count == 0) {
         size_t filesize = PerformanceMetrics::getFileSize(filename);
         result.ast_node_count = filesize / 10;  // 粗略估计
-    }
-    
-    if (result.syntax_coverage == 0) {
-        result.syntax_coverage = 95;  // 默认值
-    }
-    
-    if (result.semantic_checks == 0) {
-        result.semantic_checks = result.ast_node_count / 2;  // 估计
     }
     
     result.success = !has_errors;
@@ -281,8 +249,6 @@ ParseResult JSMTLIBParser::parse(const std::string& filename) {
         // 估计AST节点数基于文件大小
         size_t filesize = PerformanceMetrics::getFileSize(filename);
         result.ast_node_count = filesize / 10;  // 粗略估计
-        result.syntax_coverage = 100;  // 假设完全覆盖
-        result.semantic_checks = result.ast_node_count / 2;  // 估计
     }
     
     return result;
@@ -335,8 +301,6 @@ std::vector<ParseResult> ParserManager::testFile(const std::string& filename) {
             std::cout << "  解析时间: " << result.parse_time << " ms" << std::endl;
             std::cout << "  内存使用: " << result.memory_usage << " KB" << std::endl;
             std::cout << "  AST节点数: " << result.ast_node_count << std::endl;
-            std::cout << "  语法覆盖率: " << result.syntax_coverage << "%" << std::endl;
-            std::cout << "  语义检查数: " << result.semantic_checks << std::endl;
             
             if (!result.errors.empty()) {
                 std::cout << "  错误信息:" << std::endl;
@@ -422,49 +386,71 @@ void ParserManager::generateReport(
         }
         
         std::cout << std::endl;
+        
+        // 为每个解析器生成单独的CSV文件
+        std::string safe_name = parsers[p]->getName();
+        // 替换掉文件名中的特殊字符
+        std::replace(safe_name.begin(), safe_name.end(), ' ', '_');
+        std::replace(safe_name.begin(), safe_name.end(), ':', '-');
+        std::replace(safe_name.begin(), safe_name.end(), '/', '_');
+        std::replace(safe_name.begin(), safe_name.end(), '\\', '_');
+        std::string csv_filename = safe_name + "_results.csv";
+        
+        std::ofstream csv(csv_filename);
+        
+        // 写入CSV表头
+        csv << "文件名,解析成功,解析时间(ms),内存使用(KB),AST节点数" << std::endl;
+        
+        // 写入每个文件的结果
+        for (size_t f = 0; f < filenames.size(); f++) {
+            if (f < all_results.size() && p < all_results[f].size()) {
+                const auto& result = all_results[f][p];
+                
+                // 提取文件名（不含路径）
+                size_t pos = filenames[f].find_last_of("/\\");
+                std::string short_name = (pos != std::string::npos) ? filenames[f].substr(pos + 1) : filenames[f];
+                
+                csv << short_name << ","
+                    << (result.success ? "是" : "否") << ","
+                    << result.parse_time << ","
+                    << result.memory_usage << ","
+                    << result.ast_node_count << std::endl;
+            }
+        }
+        
+        // 添加平均值和成功率
+        csv << "平均值,"
+            << (success_count > 0 ? "成功率:" + std::to_string(success_count * 100 / filenames.size()) + "%" : "无成功解析") << ","
+            << (success_count > 0 ? avg_time : 0) << ","
+            << (success_count > 0 ? avg_memory : 0) << ","
+            << (success_count > 0 ? avg_nodes : 0) << std::endl;
+        
+        std::cout << "  结果已保存到 " << csv_filename << std::endl;
     }
     
-    // 输出到CSV文件
-    std::ofstream csv("parser_benchmark_results.csv");
+    // 仍然生成一个总体比较的CSV文件
+    std::ofstream summary_csv("parser_benchmark_summary.csv");
     
-    // 写入CSV表头
-    csv << "解析器,语言,版本";
-    for (const auto& filename : filenames) {
-        size_t pos = filename.find_last_of("/\\");
-        std::string short_name = (pos != std::string::npos) ? filename.substr(pos + 1) : filename;
-        csv << ",时间(" << short_name << "),内存(" << short_name << "),"
-            << "节点数(" << short_name << "),成功(" << short_name << ")";
-    }
-    csv << ",平均时间(ms),平均内存(KB),平均节点数,成功率(%)" << std::endl;
+    // 写入摘要表头
+    summary_csv << "解析器,语言,版本,平均解析时间(ms),平均内存使用(KB),平均AST节点数,成功率(%)" << std::endl;
     
-    // 写入每个解析器的结果
+    // 写入每个解析器的汇总结果
     for (size_t p = 0; p < parsers.size(); p++) {
         double avg_time = 0;
         size_t avg_memory = 0;
         size_t avg_nodes = 0;
         size_t success_count = 0;
         
-        csv << parsers[p]->getName() << ","
-            << parsers[p]->getLanguage() << ","
-            << parsers[p]->getVersion();
-        
+        // 计算平均值
         for (size_t f = 0; f < filenames.size(); f++) {
             if (f < all_results.size() && p < all_results[f].size()) {
                 const auto& result = all_results[f][p];
-                
-                csv << "," << result.parse_time
-                    << "," << result.memory_usage
-                    << "," << result.ast_node_count
-                    << "," << (result.success ? "是" : "否");
-                
                 if (result.success) {
                     avg_time += result.parse_time;
                     avg_memory += result.memory_usage;
                     avg_nodes += result.ast_node_count;
                     success_count++;
                 }
-            } else {
-                csv << ",0,0,0,否";
             }
         }
         
@@ -474,13 +460,16 @@ void ParserManager::generateReport(
             avg_nodes /= success_count;
         }
         
-        csv << "," << avg_time
-            << "," << avg_memory
-            << "," << avg_nodes
-            << "," << (success_count * 100 / filenames.size()) << std::endl;
+        summary_csv << parsers[p]->getName() << ","
+                    << parsers[p]->getLanguage() << ","
+                    << parsers[p]->getVersion() << ","
+                    << avg_time << ","
+                    << avg_memory << ","
+                    << avg_nodes << ","
+                    << (success_count * 100 / filenames.size()) << std::endl;
     }
     
-    std::cout << "性能对比报告已保存到 parser_benchmark_results.csv" << std::endl;
+    std::cout << "解析器性能比较摘要已保存到 parser_benchmark_summary.csv" << std::endl;
 }
 
 void ParserManager::listParsers() const {
