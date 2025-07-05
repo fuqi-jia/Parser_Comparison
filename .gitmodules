@@ -1,3 +1,6 @@
 [submodule "SMTLIBParser"]
 	path = SMTLIBParser
 	url = https://github.com/fuqi-jia/SMTLIBParser.git
+[submodule "SMTParser"]
+	path = SMTParser
+	url = https://github.com/fuqi-jia/SMTParser.git
