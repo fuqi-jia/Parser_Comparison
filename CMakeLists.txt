@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(SMTLIBParser_Test)
+project(ParserComparison)
 
 # set c++ standard
 set(CMAKE_CXX_STANDARD 17)
