@@ -14,6 +14,10 @@
 #include <stdexcept>
 #include <algorithm>
 #include <filesystem>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <signal.h>
 
 // 添加缺少的头文件
 #ifdef _WIN32
@@ -28,6 +32,17 @@ namespace SMTComparison {
 
 // 前向声明
 class ParserWrapper;
+
+// 安全执行解析函数，防止段错误导致程序中断
+// 返回值: true表示解析成功，false表示解析失败或发生段错误
+bool safeExecute(std::function<bool()> parseFunc, int timeoutSeconds = 30);
+
+// 写入管道的消息类型
+enum MessageType {
+    MSG_SUCCESS = 0,
+    MSG_FAILURE = 1,
+    MSG_CRASH = 2
+};
 
 // ======== 性能指标测量工具 ========
 class PerformanceMetrics {
@@ -108,6 +123,10 @@ public:
     
     // 解析器支持的功能
     virtual std::vector<std::string> getFeatures() const = 0;
+
+protected:
+    // 使用子进程安全地解析文件
+    bool safeParseFile(const std::function<bool()>& parseFunc);
 };
 
 // ======== 原生解析器实现 ========
@@ -121,7 +140,7 @@ public:
     ParseResult parse(const std::string& filename) override;
     
     std::string getName() const override {
-        return "Native SMT-LIB Parser";
+        return "native";
     }
     
     std::string getVersion() const override {
@@ -202,7 +221,7 @@ public:
     PySMTParser(const std::string& python = "python3") : 
         ExternalParser(
             "", 
-            "pySMT Parser", 
+            "pysmt", 
             "", 
             "Python", 
             {"SMT-LIB 2.6", "多种理论支持", "与多种求解器集成"}
@@ -237,7 +256,7 @@ public:
     ANTLRParser(const std::string& path = "../external/antlr/SMTLIBParser") 
         : ExternalParser(
             path, 
-            "ANTLR SMT-LIB Parser", 
+            "antlr", 
             "2.6", 
             "Java", 
             {"SMT-LIB 2.6", "语法验证"}
@@ -252,7 +271,7 @@ public:
     JSMTLIBParser(const std::string& path = "../external/jsmtlib/jsmtlib.jar") 
         : ExternalParser(
             path, 
-            "jSMTLIB Parser", 
+            "jsmtlib", 
             "2.6", 
             "Java", 
             {"SMT-LIB 2.6", "类型检查", "翻译功能"}
@@ -294,6 +313,25 @@ public:
     
     // 列出所有可用的解析器
     void listParsers() const;
+    
+    // 获取所有解析器名称
+    std::vector<std::string> getParserNames() const;
+    
+    // 通过名称获取解析器
+    std::shared_ptr<ParserInterface> getParserByName(const std::string& name) const;
+    
+    // 测试特定解析器的性能
+    ParseResult testFileWithParser(const std::string& filename, const std::string& parserName);
+    
+    // 对特定解析器进行基准测试
+    void benchmarkFilesWithParser(const std::vector<std::string>& filenames, const std::string& parserName);
+    
+    // 生成单个解析器的报告
+    void generateSingleParserReport(
+        const std::string& parserName,
+        const std::vector<std::string>& filenames,
+        const std::vector<ParseResult>& results
+    );
 };
 
 // ======== ParserWrapper类 ========

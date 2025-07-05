@@ -4,6 +4,7 @@
 #include <string>
 #include <filesystem>
 #include <algorithm>
+#include <map>
 
 namespace fs = std::filesystem;
 
@@ -17,12 +18,15 @@ void printUsage(const char* progName) {
     std::cout << "选项:\n";
     std::cout << "  -f, --file    指定要测试的SMT文件路径 (用于test命令)\n";
     std::cout << "  -d, --dir     指定要批量测试的目录 (用于batch命令)\n";
+    std::cout << "  -p, --parser  指定要使用的解析器名称 (可选)\n";
     std::cout << "  -h, --help    显示此帮助信息\n\n";
     std::cout << "示例:\n";
     std::cout << "  " << progName << " list\n";
     std::cout << "  " << progName << " test --file test.smt2\n";
     std::cout << "  " << progName << " benchmark --file test1.smt2 test2.smt2\n";
+    std::cout << "  " << progName << " benchmark --parser native --file test1.smt2\n";
     std::cout << "  " << progName << " batch --dir ../benchmarks\n";
+    std::cout << "\n可用解析器名称: native, pysmt, antlr, jsmtlib\n";
 }
 
 // 判断文件是否为SMT文件（基于扩展名）
@@ -33,6 +37,50 @@ bool isSMTFile(const std::string& filename) {
         return (ext == ".smt" || ext == ".smt2" || ext == ".smtlib");
     }
     return false;
+}
+
+// 解析命令行参数
+std::map<std::string, std::vector<std::string>> parseArgs(int argc, char* argv[]) {
+    std::map<std::string, std::vector<std::string>> args;
+    
+    // 跳过程序名和命令
+    for (int i = 2; i < argc; i++) {
+        std::string arg = argv[i];
+        
+        // 处理选项
+        if (arg == "--file" || arg == "-f" ||
+            arg == "--dir" || arg == "-d" ||
+            arg == "--parser" || arg == "-p") {
+            
+            // 提取选项名（不含前缀）
+            std::string option = (arg.substr(0, 2) == "--") ? 
+                                  arg.substr(2) : 
+                                  arg.substr(1);
+            
+            // 初始化空向量
+            if (args.find(option) == args.end()) {
+                args[option] = std::vector<std::string>();
+            }
+            
+            // 收集选项的参数值
+            while (i + 1 < argc && argv[i + 1][0] != '-') {
+                args[option].push_back(argv[++i]);
+            }
+        }
+        // 处理帮助选项
+        else if (arg == "--help" || arg == "-h") {
+            args["help"] = std::vector<std::string>();
+        }
+        // 处理其他未识别参数
+        else {
+            if (args.find("other") == args.end()) {
+                args["other"] = std::vector<std::string>();
+            }
+            args["other"].push_back(arg);
+        }
+    }
+    
+    return args;
 }
 
 int main(int argc, char* argv[]) {
@@ -50,48 +98,80 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
+    // 解析命令行参数
+    auto args = parseArgs(argc, argv);
+    
+    // 获取解析器名称（如果指定）
+    std::string parserName;
+    if (args.find("parser") != args.end() && !args["parser"].empty()) {
+        parserName = args["parser"][0];
+    }
+    
     if (command == "list") {
         // 列出所有可用的解析器
         manager.listParsers();
         return 0;
     }
     else if (command == "test") {
-        // 测试单个文件
-        if (argc < 4 || (std::string(argv[2]) != "--file" && std::string(argv[2]) != "-f")) {
+        // 确保提供了文件参数
+        if (args.find("file") == args.end() || args["file"].empty()) {
             std::cerr << "错误: 缺少文件参数\n";
             printUsage(argv[0]);
             return 1;
         }
         
-        std::string filename = argv[3];
-        manager.testFile(filename);
+        std::string filename = args["file"][0];
+        
+        if (!parserName.empty()) {
+            // 使用指定的解析器
+            try {
+                manager.testFileWithParser(filename, parserName);
+            } catch (const std::exception& e) {
+                std::cerr << "错误: " << e.what() << std::endl;
+                return 1;
+            }
+        } else {
+            // 使用所有解析器
+            manager.testFile(filename);
+        }
+        
         return 0;
     }
     else if (command == "benchmark") {
-        // 性能测试多个文件
-        if (argc < 4 || (std::string(argv[2]) != "--file" && std::string(argv[2]) != "-f")) {
+        // 确保提供了文件参数
+        if (args.find("file") == args.end() || args["file"].empty()) {
             std::cerr << "错误: 缺少文件参数\n";
             printUsage(argv[0]);
             return 1;
         }
         
-        std::vector<std::string> filenames;
-        for (int i = 3; i < argc; i++) {
-            filenames.push_back(argv[i]);
+        // 使用提供的所有文件
+        std::vector<std::string> filenames = args["file"];
+        
+        if (!parserName.empty()) {
+            // 使用指定的解析器进行基准测试
+            try {
+                manager.benchmarkFilesWithParser(filenames, parserName);
+            } catch (const std::exception& e) {
+                std::cerr << "错误: " << e.what() << std::endl;
+                return 1;
+            }
+        } else {
+            // 使用所有解析器进行基准测试
+            manager.benchmarkFiles(filenames);
         }
         
-        manager.benchmarkFiles(filenames);
         return 0;
     }
     else if (command == "batch") {
-        // 批量测试目录
-        if (argc < 4 || (std::string(argv[2]) != "--dir" && std::string(argv[2]) != "-d")) {
+        // 确保提供了目录参数
+        if (args.find("dir") == args.end() || args["dir"].empty()) {
             std::cerr << "错误: 缺少目录参数\n";
             printUsage(argv[0]);
             return 1;
         }
         
-        std::string dir_path = argv[3];
+        std::string dir_path = args["dir"][0];
         std::vector<std::string> filenames;
         
         try {
@@ -111,7 +191,20 @@ int main(int argc, char* argv[]) {
             std::sort(filenames.begin(), filenames.end());
             
             std::cout << "找到 " << filenames.size() << " 个SMT文件，开始测试..." << std::endl;
-            manager.benchmarkFiles(filenames);
+            
+            if (!parserName.empty()) {
+                // 使用指定的解析器进行基准测试
+                try {
+                    manager.benchmarkFilesWithParser(filenames, parserName);
+                } catch (const std::exception& e) {
+                    std::cerr << "错误: " << e.what() << std::endl;
+                    return 1;
+                }
+            } else {
+                // 使用所有解析器进行基准测试
+                manager.benchmarkFiles(filenames);
+            }
+            
             return 0;
         }
         catch (const std::exception& e) {
@@ -119,7 +212,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
     }
-    else if (command == "--help" || command == "-h") {
+    else if (command == "--help" || command == "-h" || args.find("help") != args.end()) {
         printUsage(argv[0]);
         return 0;
     }

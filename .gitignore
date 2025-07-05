@@ -55,3 +55,7 @@ install_manifest.txt
 *.tar.lzo
 *.tar.lrz
 *.tar.lrz
+
+# log
+*.log
+*.csv
