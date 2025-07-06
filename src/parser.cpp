@@ -179,66 +179,63 @@ ParseResult NativeParser::parse(const std::string& filename) {
 ParseResult PySMTParser::parse(const std::string& filename) {
     ParseResult result;
     
-    // 获取初始内存使用
-    size_t initial_memory = PerformanceMetrics::getCurrentMemoryUsage();
-    
-    // 准备Python命令
-    std::string cmd = python_path + " -c \"from pysmt.smtlib.parser import SmtLibParser; "
-                    "import time; "
-                    "start = time.time(); "
-                    "parser = SmtLibParser(); "
-                    "try: "
-                    "    script = parser.get_script_fname('" + filename + "'); "
-                    "    node_count = len(script.commands); "
-                    "    print('SUCCESS'); "
-                    "    print(time.time() - start); "
-                    "    print(node_count); "
-                    "except Exception as e: "
-                    "    print('ERROR'); "
-                    "    print(e); "
-                    "\"";
-    
-    // 使用安全执行
-    bool success = false;
-    double parse_time = 0;
     try {
-        parse_time = PerformanceMetrics::measureExecutionTime([&]() {
-            success = safeParseFile([&]() {
-                std::string output = exec(cmd);
-                std::istringstream stream(output);
-                std::string status;
-                std::getline(stream, status);
-                
-                if (status == "SUCCESS") {
-                    std::string time_str, nodes_str;
-                    std::getline(stream, time_str);
-                    std::getline(stream, nodes_str);
-                    
-                    try {
-                        result.parse_time = std::stod(time_str) * 1000; // 转换为毫秒
-                        result.ast_node_count = std::stoull(nodes_str);
-                    } catch (...) {
-                        return false;
-                    }
-                    return true;
-                } else {
-                    std::string error_msg;
-                    std::getline(stream, error_msg);
-                    result.errors.push_back(error_msg);
-                    return false;
+        // 获取pySMT解析器脚本的路径
+        std::filesystem::path current_path = std::filesystem::current_path();
+        std::string script_path;
+        
+        // 尝试多个可能的位置
+        std::vector<std::string> possible_paths = {
+            (current_path / "external" / "pysmt" / "pysmt_parser.py").string(),
+            (current_path / ".." / "external" / "pysmt" / "pysmt_parser.py").string(),
+            (std::filesystem::absolute("external/pysmt/pysmt_parser.py")).string(),
+            (std::filesystem::absolute("../external/pysmt/pysmt_parser.py")).string()
+        };
+        
+        for (const auto& path : possible_paths) {
+            if (std::filesystem::exists(path)) {
+                script_path = path;
+                break;
+            }
+        }
+        
+        if (script_path.empty()) {
+            throw std::runtime_error("无法找到pysmt_parser.py脚本");
+        }
+        
+        // 构建Python命令
+        std::string cmd = python_path + " \"" + script_path + "\" \"" + filename + "\"";
+        
+        // 执行Python脚本
+        std::string output = exec(cmd);
+        
+        // 解析JSON输出
+        try {
+            SimpleJson::Value json = SimpleJson::Parser::parse(output);
+            
+            // 填充结果结构
+            result.success = json["success"].getBool();
+            result.parse_time = json["parse_time"].getNumber();
+            result.memory_usage = static_cast<size_t>(json["memory_usage"].getNumber());
+            result.ast_node_count = static_cast<size_t>(json["ast_node_count"].getNumber());
+            
+            // 获取错误信息
+            if (json["errors"].isArray()) {
+                const auto& errors = json["errors"].getArray();
+                for (const auto& err : errors) {
+                    result.errors.push_back(err.getString());
                 }
-            });
-        });
+            }
+        } catch (const std::exception& e) {
+            result.success = false;
+            result.errors.push_back(std::string("解析JSON输出失败: ") + e.what());
+            result.errors.push_back("原始输出: " + output);
+        }
+        
     } catch (const std::exception& e) {
         result.success = false;
-        result.errors.push_back(std::string("解析器异常: ") + e.what());
+        result.errors.push_back(std::string("执行pySMT解析器失败: ") + e.what());
     }
-    
-    result.success = success;
-    if (success && result.parse_time == 0) {
-        result.parse_time = parse_time;  // 使用外部测量时间作为备份
-    }
-    result.memory_usage = PerformanceMetrics::getCurrentMemoryUsage() - initial_memory;
     
     return result;
 }
