@@ -1,52 +1,110 @@
 #include "smt_parser_comparison.h"
+#include "simple_json.h"
 #include <iostream>
 #include <fstream>
 #include <chrono>
 #include <cstdlib>
 #include <iomanip>
 #include <random>
-
-// 如果可以，引入实际SMTParser的头文件
-// #include "SMTParser/parser.h" 
+#include <filesystem>
 
 namespace SMTComparison {
 
-// ======== ParserWrapper 实现 ========
-ParserWrapper::ParserWrapper() {
-    // 这里应该初始化对实际解析器的引用
-    parser = std::make_shared<SMTParser::Parser>();
-}
-
-ParserWrapper::~ParserWrapper() {
-    // 清理资源
-}
-
-bool ParserWrapper::parse(const std::string& filename) {
-    // 这里应该调用实际SMTParser的解析函数
-    return parser->parse(filename);
+// 执行外部命令并获取输出的帮助函数
+std::string exec(const std::string& cmd) {
+    std::array<char, 4096> buffer;
+    std::string result;
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
+    if (!pipe) {
+        throw std::runtime_error("popen() failed!");
+    }
+    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+        result += buffer.data();
+    }
+    return result;
 }
 
 // ======== NativeParser 实现 ========
-NativeParser::NativeParser() : parser(std::make_shared<ParserWrapper>()) {}
+NativeParser::NativeParser() {
+    // 不需要初始化
+}
 
 ParseResult NativeParser::parse(const std::string& filename) {
     ParseResult result;
     
-    // 记录开始时的内存使用
-    size_t memory_before = PerformanceMetrics::getCurrentMemoryUsage();
-    
-    // 测量解析时间
-    result.parse_time = PerformanceMetrics::measureExecutionTime([&]() {
-        result.success = parser->parse(filename);
-    });
-    
-    // 计算内存使用
-    size_t memory_after = PerformanceMetrics::getCurrentMemoryUsage();
-    result.memory_usage = memory_after - memory_before;
-    
-    // 从解析器中获取更多信息
-    result.ast_node_count = parser->getASTNodeCount();
-    result.errors = parser->getErrors();
+    try {
+        // 获取wrapper的绝对路径
+        std::filesystem::path current_path = std::filesystem::current_path();
+        std::string wrapper_path;
+        
+        // 尝试多个可能的位置
+        std::vector<std::string> possible_paths = {
+            (current_path / "smt_parser_wrapper").string(),
+            (current_path / "build" / "smt_parser_wrapper").string(),
+            (current_path / ".." / "build" / "smt_parser_wrapper").string(),
+            (std::filesystem::absolute("smt_parser_wrapper")).string(),
+            (std::filesystem::absolute("build/smt_parser_wrapper")).string(),
+            (std::filesystem::absolute("../build/smt_parser_wrapper")).string()
+        };
+        
+        for (const auto& path : possible_paths) {
+            if (std::filesystem::exists(path)) {
+                wrapper_path = path;
+                break;
+            }
+        }
+        
+        if (wrapper_path.empty()) {
+            throw std::runtime_error("无法找到smt_parser_wrapper可执行文件");
+        }
+        
+        std::cout << "使用wrapper路径: " << wrapper_path << std::endl;
+        
+        // 构建调用wrapper的命令
+        std::string cmd = wrapper_path + " \"" + filename + "\"";
+        
+        // 记录开始时的内存使用
+        size_t initial_memory = PerformanceMetrics::getCurrentMemoryUsage();
+        
+        // 调用外部程序解析文件
+        std::string output;
+        double parse_time = PerformanceMetrics::measureExecutionTime([&]() {
+            output = exec(cmd);
+        });
+        
+        // 计算内存使用
+        size_t final_memory = PerformanceMetrics::getCurrentMemoryUsage();
+        result.memory_usage = final_memory - initial_memory;
+        result.parse_time = parse_time;
+        
+        // 解析JSON输出
+        try {
+            SimpleJson::Value json = SimpleJson::Parser::parse(output);
+            
+            // 填充结果结构
+            result.success = json["success"].getBool();
+            // 只使用wrapper报告的解析时间，忽略进程启动时间
+            result.parse_time = json["parse_time"].getNumber();
+            // 使用wrapper报告的内存使用，更准确
+            result.memory_usage = static_cast<size_t>(json["memory_usage"].getNumber());
+            result.ast_node_count = static_cast<size_t>(json["ast_node_count"].getNumber());
+            
+            // 获取错误信息
+            if (json["errors"].isArray()) {
+                const auto& errors = json["errors"].getArray();
+                for (const auto& err : errors) {
+                    result.errors.push_back(err.getString());
+                }
+            }
+        } catch (const std::exception& e) {
+            result.success = false;
+            result.errors.push_back(std::string("解析JSON输出失败: ") + e.what());
+            result.errors.push_back("原始输出: " + output);
+        }
+    } catch (const std::exception& e) {
+        result.success = false;
+        result.errors.push_back(std::string("执行外部解析器失败: ") + e.what());
+    }
     
     return result;
 }
@@ -386,71 +444,49 @@ void ParserManager::generateReport(
         }
         
         std::cout << std::endl;
-        
-        // 为每个解析器生成单独的CSV文件
-        std::string safe_name = parsers[p]->getName();
-        // 替换掉文件名中的特殊字符
-        std::replace(safe_name.begin(), safe_name.end(), ' ', '_');
-        std::replace(safe_name.begin(), safe_name.end(), ':', '-');
-        std::replace(safe_name.begin(), safe_name.end(), '/', '_');
-        std::replace(safe_name.begin(), safe_name.end(), '\\', '_');
-        std::string csv_filename = safe_name + "_results.csv";
-        
-        std::ofstream csv(csv_filename);
-        
-        // 写入CSV表头
-        csv << "文件名,解析成功,解析时间(ms),内存使用(KB),AST节点数" << std::endl;
-        
-        // 写入每个文件的结果
-        for (size_t f = 0; f < filenames.size(); f++) {
-            if (f < all_results.size() && p < all_results[f].size()) {
-                const auto& result = all_results[f][p];
-                
-                // 提取文件名（不含路径）
-                size_t pos = filenames[f].find_last_of("/\\");
-                std::string short_name = (pos != std::string::npos) ? filenames[f].substr(pos + 1) : filenames[f];
-                
-                csv << short_name << ","
-                    << (result.success ? "true" : "false") << ","
-                    << result.parse_time << ","
-                    << result.memory_usage << ","
-                    << result.ast_node_count << std::endl;
-            }
-        }
-        
-        // 添加平均值和成功率
-        csv << "平均值,"
-            << (success_count > 0 ? "成功率:" + std::to_string(success_count * 100 / filenames.size()) + "%" : "无成功解析") << ","
-            << (success_count > 0 ? avg_time : 0) << ","
-            << (success_count > 0 ? avg_memory : 0) << ","
-            << (success_count > 0 ? avg_nodes : 0) << std::endl;
-        
-        std::cout << "  结果已保存到 " << csv_filename << std::endl;
     }
     
-    // 仍然生成一个总体比较的CSV文件
-    std::ofstream summary_csv("parser_benchmark_summary.csv");
+    // 输出到CSV文件
+    std::ofstream csv("parser_benchmark_results.csv");
     
-    // 写入摘要表头
-    summary_csv << "解析器,语言,版本,平均解析时间(ms),平均内存使用(KB),平均AST节点数,成功率(%)" << std::endl;
+    // 写入CSV表头
+    csv << "解析器,语言,版本";
+    for (const auto& filename : filenames) {
+        size_t pos = filename.find_last_of("/\\");
+        std::string short_name = (pos != std::string::npos) ? filename.substr(pos + 1) : filename;
+        csv << ",时间(" << short_name << "),内存(" << short_name << "),"
+            << "节点数(" << short_name << "),成功(" << short_name << ")";
+    }
+    csv << ",平均时间(ms),平均内存(KB),平均节点数,成功率(%)" << std::endl;
     
-    // 写入每个解析器的汇总结果
+    // 写入每个解析器的结果
     for (size_t p = 0; p < parsers.size(); p++) {
         double avg_time = 0;
         size_t avg_memory = 0;
         size_t avg_nodes = 0;
         size_t success_count = 0;
         
-        // 计算平均值
+        csv << parsers[p]->getName() << ","
+            << parsers[p]->getLanguage() << ","
+            << parsers[p]->getVersion();
+        
         for (size_t f = 0; f < filenames.size(); f++) {
             if (f < all_results.size() && p < all_results[f].size()) {
                 const auto& result = all_results[f][p];
+                
+                csv << "," << result.parse_time
+                    << "," << result.memory_usage
+                    << "," << result.ast_node_count
+                    << "," << (result.success ? "true" : "false");
+                
                 if (result.success) {
                     avg_time += result.parse_time;
                     avg_memory += result.memory_usage;
                     avg_nodes += result.ast_node_count;
                     success_count++;
                 }
+            } else {
+                csv << ",0,0,0,false";
             }
         }
         
@@ -460,16 +496,13 @@ void ParserManager::generateReport(
             avg_nodes /= success_count;
         }
         
-        summary_csv << parsers[p]->getName() << ","
-                    << parsers[p]->getLanguage() << ","
-                    << parsers[p]->getVersion() << ","
-                    << avg_time << ","
-                    << avg_memory << ","
-                    << avg_nodes << ","
-                    << (success_count * 100 / filenames.size()) << std::endl;
+        csv << "," << avg_time
+            << "," << avg_memory
+            << "," << avg_nodes
+            << "," << (success_count * 100 / filenames.size()) << std::endl;
     }
     
-    std::cout << "解析器性能比较摘要已保存到 parser_benchmark_summary.csv" << std::endl;
+    std::cout << "性能对比报告已保存到 parser_benchmark_results.csv" << std::endl;
 }
 
 void ParserManager::listParsers() const {
@@ -492,7 +525,6 @@ void ParserManager::listParsers() const {
     }
 }
 
-// 新增方法：获取所有解析器名称
 std::vector<std::string> ParserManager::getParserNames() const {
     std::vector<std::string> names;
     for (const auto& parser : parsers) {
@@ -501,7 +533,6 @@ std::vector<std::string> ParserManager::getParserNames() const {
     return names;
 }
 
-// 新增方法：通过名称获取解析器
 std::shared_ptr<ParserInterface> ParserManager::getParserByName(const std::string& name) const {
     for (const auto& parser : parsers) {
         if (parser->getName() == name) {
@@ -511,138 +542,170 @@ std::shared_ptr<ParserInterface> ParserManager::getParserByName(const std::strin
     return nullptr;
 }
 
-// 新增方法：测试特定解析器的性能
 ParseResult ParserManager::testFileWithParser(const std::string& filename, const std::string& parserName) {
     auto parser = getParserByName(parserName);
     if (!parser) {
-        throw std::runtime_error("找不到名为 '" + parserName + "' 的解析器");
+        ParseResult result;
+        result.success = false;
+        result.errors.push_back("找不到解析器: " + parserName);
+        return result;
     }
     
+    std::cout << "使用 " << parser->getName() << " 解析器测试文件: " << filename << std::endl;
+    
+    ParseResult result;
     try {
-        std::cout << "使用 " << parser->getName() << " 解析 " << filename << std::endl;
+        result = parser->parse(filename);
+    } catch (const std::exception& e) {
+        result.success = false;
+        result.errors.push_back(std::string("解析器异常: ") + e.what());
+    } catch (...) {
+        result.success = false;
+        result.errors.push_back("未知异常");
+    }
+    
+    // 输出结果
+    std::cout << "  结果: " << (result.success ? "成功" : "失败") << std::endl;
+    std::cout << "  解析时间: " << result.parse_time << " ms" << std::endl;
+    std::cout << "  内存使用: " << result.memory_usage << " KB" << std::endl;
+    std::cout << "  AST节点数量: " << result.ast_node_count << std::endl;
+    
+    if (!result.success && !result.errors.empty()) {
+        std::cout << "  错误信息:" << std::endl;
+        for (const auto& err : result.errors) {
+            std::cout << "    " << err << std::endl;
+        }
+    }
+    
+    return result;
+}
+
+void ParserManager::benchmarkFilesWithParser(const std::vector<std::string>& filenames, const std::string& parserName) {
+    auto parser = getParserByName(parserName);
+    if (!parser) {
+        std::cerr << "找不到解析器: " << parserName << std::endl;
+        return;
+    }
+    
+    std::vector<ParseResult> results;
+    size_t success_count = 0;
+    size_t failure_count = 0;
+    size_t crash_count = 0;
+    
+    // 对每个文件执行测试
+    for (const auto& filename : filenames) {
+        ParseResult result;
+        bool hadException = false;
         
-        ParseResult result = parser->parse(filename);
+        try {
+            result = parser->parse(filename);
+            if (result.success) {
+                success_count++;
+            } else {
+                failure_count++;
+            }
+        } catch (const std::exception& e) {
+            hadException = true;
+            result.success = false;
+            result.errors.push_back(std::string("解析过程异常: ") + e.what());
+            crash_count++;
+        } catch (...) {
+            hadException = true;
+            result.success = false;
+            result.errors.push_back("解析过程发生未知异常或崩溃");
+            crash_count++;
+        }
         
-        std::cout << "  解析状态: " << (result.success ? "成功" : "失败") << std::endl;
-        std::cout << "  解析时间: " << result.parse_time << " ms" << std::endl;
-        std::cout << "  内存使用: " << result.memory_usage << " KB" << std::endl;
-        std::cout << "  AST节点数: " << result.ast_node_count << std::endl;
-        
-        if (!result.errors.empty()) {
-            std::cout << "  错误信息:" << std::endl;
-            for (const auto& err : result.errors) {
-                std::cout << "    " << err << std::endl;
+        // 输出简要结果
+        std::cout << "文件: " << std::filesystem::path(filename).filename().string();
+        if (hadException) {
+            std::cout << " - 异常/崩溃" << std::endl;
+            if (!result.errors.empty()) {
+                std::cout << "  错误: " << result.errors[0] << std::endl;
+            }
+        } else {
+            std::cout << " - " << (result.success ? "成功" : "失败") << std::endl;
+            if (!result.success && !result.errors.empty()) {
+                std::cout << "  错误: " << result.errors[0] << std::endl;
             }
         }
         
-        return result;
-    } catch (const std::exception& e) {
-        std::cerr << "  测试过程中出错: " << e.what() << std::endl;
-        
-        ParseResult errorResult;
-        errorResult.success = false;
-        errorResult.errors.push_back(e.what());
-        return errorResult;
-    }
-}
-
-// 新增方法：对特定解析器进行基准测试
-void ParserManager::benchmarkFilesWithParser(const std::vector<std::string>& filenames, const std::string& parserName) {
-    std::vector<ParseResult> results;
-    
-    for (const auto& filename : filenames) {
-        results.push_back(testFileWithParser(filename, parserName));
+        results.push_back(result);
     }
     
-    // 生成单个解析器的报告
+    // 生成报告
     generateSingleParserReport(parserName, filenames, results);
+    
+    // 输出摘要信息
+    double success_rate = filenames.empty() ? 0 : (static_cast<double>(success_count) / filenames.size() * 100.0);
+    double failure_rate = filenames.empty() ? 0 : (static_cast<double>(failure_count) / filenames.size() * 100.0);
+    double crash_rate = filenames.empty() ? 0 : (static_cast<double>(crash_count) / filenames.size() * 100.0);
+    
+    std::cout << "\n===== " << parserName << " 解析器测试摘要 =====" << std::endl;
+    std::cout << "总文件数: " << filenames.size() << std::endl;
+    std::cout << "成功: " << success_count << " (" << std::fixed << std::setprecision(2) 
+              << success_rate << "%)" << std::endl;
+    std::cout << "失败: " << failure_count << " (" << std::fixed << std::setprecision(2) 
+              << failure_rate << "%)" << std::endl;
+    std::cout << "崩溃/异常: " << crash_count << " (" << std::fixed << std::setprecision(2) 
+              << crash_rate << "%)" << std::endl;
 }
 
-// 新增方法：生成单个解析器的报告
 void ParserManager::generateSingleParserReport(
     const std::string& parserName,
     const std::vector<std::string>& filenames,
     const std::vector<ParseResult>& results
 ) {
-    // 输出到控制台
-    std::cout << "\n========== " << parserName << " 性能报告 ==========\n" << std::endl;
+    // 创建CSV文件
+    std::string filename = parserName + "_report.csv";
+    std::ofstream report(filename);
+    if (!report) {
+        std::cerr << "无法创建报告文件: " << filename << std::endl;
+        return;
+    }
     
-    // 计算平均值
-    double avg_time = 0;
-    size_t avg_memory = 0;
-    size_t avg_nodes = 0;
+    // 写入CSV头
+    report << "文件名,解析时间(ms),内存使用(KB),AST节点数量,结果" << std::endl;
+    
+    // 计算统计信息
     size_t success_count = 0;
-    
-    for (size_t f = 0; f < filenames.size() && f < results.size(); f++) {
-        const auto& result = results[f];
-        
-        if (result.success) {
-            avg_time += result.parse_time;
-            avg_memory += result.memory_usage;
-            avg_nodes += result.ast_node_count;
-            success_count++;
-        }
-        
-        std::cout << "  " << filenames[f] << ": "
-                  << (result.success ? "成功" : "失败") << ", "
-                  << result.parse_time << " ms, "
-                  << result.memory_usage << " KB, "
-                  << result.ast_node_count << " 节点" << std::endl;
-    }
-    
-    if (success_count > 0) {
-        avg_time /= success_count;
-        avg_memory /= success_count;
-        avg_nodes /= success_count;
-        
-        std::cout << "  平均: "
-                  << avg_time << " ms, "
-                  << avg_memory << " KB, "
-                  << avg_nodes << " 节点, "
-                  << "成功率: " << (success_count * 100 / filenames.size()) << "%" << std::endl;
-    } else {
-        std::cout << "  没有成功解析任何文件" << std::endl;
-    }
-    
-    std::cout << std::endl;
-    
-    // 为解析器生成CSV文件
-    std::string safe_name = parserName;
-    // 替换掉文件名中的特殊字符
-    std::replace(safe_name.begin(), safe_name.end(), ' ', '_');
-    std::replace(safe_name.begin(), safe_name.end(), ':', '-');
-    std::replace(safe_name.begin(), safe_name.end(), '/', '_');
-    std::replace(safe_name.begin(), safe_name.end(), '\\', '_');
-    std::string csv_filename = safe_name + "_results.csv";
-    
-    std::ofstream csv(csv_filename);
-    
-    // 写入CSV表头
-    csv << "文件名,解析成功,解析时间(ms),内存使用(KB),AST节点数" << std::endl;
+    double total_time = 0;
+    size_t total_memory = 0;
+    size_t total_nodes = 0;
     
     // 写入每个文件的结果
-    for (size_t f = 0; f < filenames.size() && f < results.size(); f++) {
-        const auto& result = results[f];
+    for (size_t i = 0; i < filenames.size() && i < results.size(); ++i) {
+        std::string file_basename = std::filesystem::path(filenames[i]).filename().string();
+        const auto& result = results[i];
         
-        // 提取文件名（不含路径）
-        size_t pos = filenames[f].find_last_of("/\\");
-        std::string short_name = (pos != std::string::npos) ? filenames[f].substr(pos + 1) : filenames[f];
+        report << file_basename << ",";
+        report << result.parse_time << ",";
+        report << result.memory_usage << ",";
+        report << result.ast_node_count << ",";
+        report << (result.success ? "成功" : "失败") << std::endl;
         
-        csv << short_name << ","
-            << (result.success ? "true" : "false") << ","
-            << result.parse_time << ","
-            << result.memory_usage << ","
-            << result.ast_node_count << std::endl;
+        // 更新统计信息
+        if (result.success) {
+            success_count++;
+            total_time += result.parse_time;
+            total_memory += result.memory_usage;
+            total_nodes += result.ast_node_count;
+        }
     }
     
-    // 添加平均值和成功率
-    csv << "平均值,"
-        << (success_count > 0 ? "成功率:" + std::to_string(success_count * 100 / filenames.size()) + "%" : "无成功解析") << ","
-        << (success_count > 0 ? avg_time : 0) << ","
-        << (success_count > 0 ? avg_memory : 0) << ","
-        << (success_count > 0 ? avg_nodes : 0) << std::endl;
+    // 写入汇总统计
+    double success_rate = filenames.empty() ? 0 : (static_cast<double>(success_count) / filenames.size() * 100.0);
+    double avg_time = success_count > 0 ? (total_time / success_count) : 0;
+    double avg_memory = success_count > 0 ? (static_cast<double>(total_memory) / success_count) : 0;
+    double avg_nodes = success_count > 0 ? (static_cast<double>(total_nodes) / success_count) : 0;
     
-    std::cout << "  结果已保存到 " << csv_filename << std::endl;
+    report << "平均值,";
+    report << avg_time << ",";
+    report << avg_memory << ",";
+    report << avg_nodes << ",";
+    report << success_rate << "%" << std::endl;
+    
+    std::cout << "生成报告: " << filename << std::endl;
 }
 
 } // namespace SMTComparison 

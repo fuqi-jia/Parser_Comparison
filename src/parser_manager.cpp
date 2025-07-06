@@ -271,6 +271,8 @@ void ParserManager::benchmarkFilesWithParser(const std::vector<std::string>& fil
     // 对每个文件执行测试
     for (const auto& filename : filenames) {
         ParseResult result;
+        bool hadException = false;
+        
         try {
             result = parser->parse(filename);
             if (result.success) {
@@ -278,15 +280,31 @@ void ParserManager::benchmarkFilesWithParser(const std::vector<std::string>& fil
             } else {
                 failure_count++;
             }
-        } catch (...) {
+        } catch (const std::exception& e) {
+            hadException = true;
             result.success = false;
-            result.errors.push_back("解析过程崩溃");
+            result.errors.push_back(std::string("解析过程异常: ") + e.what());
+            crash_count++;
+        } catch (...) {
+            hadException = true;
+            result.success = false;
+            result.errors.push_back("解析过程发生未知异常或崩溃");
             crash_count++;
         }
         
         // 输出简要结果
-        std::cout << "文件: " << std::filesystem::path(filename).filename().string() 
-                  << " - " << (result.success ? "成功" : "失败") << std::endl;
+        std::cout << "文件: " << std::filesystem::path(filename).filename().string();
+        if (hadException) {
+            std::cout << " - 异常/崩溃" << std::endl;
+            if (!result.errors.empty()) {
+                std::cout << "  错误: " << result.errors[0] << std::endl;
+            }
+        } else {
+            std::cout << " - " << (result.success ? "成功" : "失败") << std::endl;
+            if (!result.success && !result.errors.empty()) {
+                std::cout << "  错误: " << result.errors[0] << std::endl;
+            }
+        }
         
         results.push_back(result);
     }
@@ -305,7 +323,7 @@ void ParserManager::benchmarkFilesWithParser(const std::vector<std::string>& fil
               << success_rate << "%)" << std::endl;
     std::cout << "失败: " << failure_count << " (" << std::fixed << std::setprecision(2) 
               << failure_rate << "%)" << std::endl;
-    std::cout << "崩溃: " << crash_count << " (" << std::fixed << std::setprecision(2) 
+    std::cout << "崩溃/异常: " << crash_count << " (" << std::fixed << std::setprecision(2) 
               << crash_rate << "%)" << std::endl;
 }
 

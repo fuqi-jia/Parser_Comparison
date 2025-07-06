@@ -18,13 +18,13 @@ set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
 # add SMTParser subdirectory
 add_subdirectory(SMTParser)
 
-# add src subdirectory
-add_subdirectory(src)
-
 # find GMP library
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GMP REQUIRED gmp)
 pkg_check_modules(GMPXX REQUIRED gmpxx)
+
+# add src subdirectory
+add_subdirectory(src)
 
 # get all source files
 file(GLOB_RECURSE SOURCES "src/*.cpp")

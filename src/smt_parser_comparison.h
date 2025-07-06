@@ -1,6 +1,5 @@
 #pragma once
 
-#include "parser.h"
 #include <string>
 #include <iostream>
 #include <vector>
@@ -29,9 +28,6 @@
 #endif
 
 namespace SMTComparison {
-
-// 前向声明
-class ParserWrapper;
 
 // 安全执行解析函数，防止段错误导致程序中断
 // 返回值: true表示解析成功，false表示解析失败或发生段错误
@@ -131,9 +127,6 @@ protected:
 
 // ======== 原生解析器实现 ========
 class NativeParser : public ParserInterface {
-private:
-    std::shared_ptr<ParserWrapper> parser;
-    
 public:
     NativeParser();
     
@@ -332,38 +325,6 @@ public:
         const std::vector<std::string>& filenames,
         const std::vector<ParseResult>& results
     );
-};
-
-// ======== ParserWrapper类 ========
-// 这个类封装了对SMTParser的原生parser.h中Parser类的调用
-class ParserWrapper {
-private:
-    size_t ast_node_count = 0;
-    std::vector<std::string> errors;
-    
-    // 这里应该放置指向实际SMTParser::Parser的指针
-    SMTParser::ParserPtr parser;
-    
-public:
-    ParserWrapper();
-    ~ParserWrapper();
-    
-    bool parse(const std::string& filename);
-    
-    // 获取AST节点数量
-    size_t getASTNodeCount() const {
-        return parser->getNodeCount();
-    }
-    
-    // 获取错误信息
-    const std::vector<std::string>& getErrors() const {
-        return errors;
-    }
-    
-    // 添加错误信息
-    void addError(const std::string& error) {
-        errors.push_back(error);
-    }
 };
 
 } // namespace SMTComparison 

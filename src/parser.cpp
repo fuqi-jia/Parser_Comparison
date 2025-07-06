@@ -1,4 +1,6 @@
 #include "smt_parser_comparison.h"
+#include "simple_json.h"
+#include <filesystem>
 
 namespace SMTComparison {
 
@@ -63,7 +65,7 @@ bool safeExecute(std::function<bool()> parseFunc, int timeoutSeconds) {
                 // 子进程正常退出
                 read(pipefd[0], &result, sizeof(MessageType));
             } else if (WIFSIGNALED(status)) {
-                // 子进程被信号终止（如段错误）
+                // 子进程被信号终止（如段错误或可能是exit()调用）
                 result = MSG_CRASH;
                 std::cerr << "解析器崩溃 (信号 " << WTERMSIG(status) << ")" << std::endl;
             }
@@ -81,39 +83,93 @@ bool ParserInterface::safeParseFile(const std::function<bool()>& parseFunc) {
     return safeExecute(parseFunc);
 }
 
+// 执行外部命令并获取输出的帮助函数
+std::string exec(const std::string& cmd) {
+    std::array<char, 4096> buffer;
+    std::string result;
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
+    if (!pipe) {
+        throw std::runtime_error("popen() failed!");
+    }
+    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+        result += buffer.data();
+    }
+    return result;
+}
+
+// 获取包装器可执行文件的路径
+std::string getWrapperPath() {
+    // 首先尝试当前目录
+    std::string wrapper = "./smt_parser_wrapper";
+    if (std::filesystem::exists(wrapper)) {
+        return wrapper;
+    }
+    
+    // 尝试构建目录
+    wrapper = "../smt_parser_wrapper";
+    if (std::filesystem::exists(wrapper)) {
+        return wrapper;
+    }
+    
+    // 尝试相对于源码的路径
+    wrapper = "../build/src/smt_parser_wrapper";
+    if (std::filesystem::exists(wrapper)) {
+        return wrapper;
+    }
+    
+    // 尝试相对于构建目录的路径
+    wrapper = "../build/smt_parser_wrapper";
+    if (std::filesystem::exists(wrapper)) {
+        return wrapper;
+    }
+    
+    // 返回一个默认路径，并依赖系统的PATH环境变量
+    return "smt_parser_wrapper";
+}
+
 // ======== NativeParser实现 ========
 NativeParser::NativeParser() {
-    parser = std::make_shared<ParserWrapper>();
+    // 不再需要ParserWrapper
 }
 
 ParseResult NativeParser::parse(const std::string& filename) {
     ParseResult result;
     
-    // 获取初始内存使用
-    size_t initial_memory = PerformanceMetrics::getCurrentMemoryUsage();
-    
-    // 使用安全解析来处理潜在的段错误
-    bool success = false;
     try {
-        double parse_time = PerformanceMetrics::measureExecutionTime([&]() {
-            success = safeParseFile([this, &filename]() {
-                return parser->parse(filename);
-            });
-        });
+        // 获取wrapper的路径
+        std::string wrapper_path = getWrapperPath();
         
-        // 记录解析结果
-        result.success = success;
-        result.parse_time = parse_time;
+        // 构建调用wrapper的命令
+        std::string cmd = wrapper_path + " \"" + filename + "\"";
         
-        if (success) {
-            result.ast_node_count = parser->getASTNodeCount();
-            result.memory_usage = PerformanceMetrics::getCurrentMemoryUsage() - initial_memory;
-        } else {
-            result.errors = parser->getErrors();
+        // 调用外部程序解析文件
+        std::string output = exec(cmd);
+        
+        // 解析JSON输出
+        try {
+            SimpleJson::Value json = SimpleJson::Parser::parse(output);
+            
+            // 填充结果结构
+            result.success = json["success"].getBool();
+            result.parse_time = json["parse_time"].getNumber();
+            result.memory_usage = static_cast<size_t>(json["memory_usage"].getNumber());
+            result.ast_node_count = static_cast<size_t>(json["ast_node_count"].getNumber());
+            
+            // 获取错误信息
+            if (json["errors"].isArray()) {
+                const auto& errors = json["errors"].getArray();
+                for (const auto& err : errors) {
+                    result.errors.push_back(err.getString());
+                }
+            }
+        } catch (const std::exception& e) {
+            result.success = false;
+            result.errors.push_back(std::string("解析JSON输出失败: ") + e.what());
+            result.errors.push_back("原始输出: " + output);
         }
     } catch (const std::exception& e) {
         result.success = false;
-        result.errors.push_back(std::string("解析器异常: ") + e.what());
+        result.errors.push_back(std::string("执行外部解析器失败: ") + e.what());
     }
     
     return result;
@@ -286,35 +342,6 @@ ParseResult JSMTLIBParser::parse(const std::string& filename) {
 }
 
 // ======== ParserWrapper实现 ========
-ParserWrapper::ParserWrapper() {
-    parser = SMTParser::createParser();
-}
-
-ParserWrapper::~ParserWrapper() {
-    // 清理工作（如果需要）
-}
-
-bool ParserWrapper::parse(const std::string& filename) {
-    bool success = false;
-    
-    try {
-        success = parser->parseFile(filename.c_str());
-        if (!success) {
-            // 获取错误信息
-            SMTParser::ErrorVec errs = parser->getErrors();
-            for (const auto& err : errs) {
-                errors.push_back(err);
-            }
-        }
-    } catch (const std::exception& e) {
-        errors.push_back(std::string("解析异常: ") + e.what());
-        success = false;
-    } catch (...) {
-        errors.push_back("解析过程中发生未知异常");
-        success = false;
-    }
-    
-    return success;
-}
+// ParserWrapper不再需要，因为我们直接调用外部程序
 
 } // namespace SMTComparison 
