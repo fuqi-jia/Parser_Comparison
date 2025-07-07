@@ -210,8 +210,33 @@ class PySMTParser : public ExternalParser {
 private:
     std::string python_path;
     
+    // 查找可用的Python路径
+    std::string findPythonPath() {
+        std::vector<std::string> candidates = {
+            "/home/fuqi/anaconda3/envs/smt/bin/python",  // 您的conda环境
+            "/home/fuqi/anaconda3/bin/python",           // anaconda base环境
+            "python3",                                   // 系统python3
+            "python"                                     // 系统python
+        };
+        
+        for (const auto& candidate : candidates) {
+            try {
+                std::string check_cmd = candidate + " -c \"import pysmt; print('OK')\" 2>/dev/null";
+                std::string result = exec(check_cmd);
+                if (result.find("OK") != std::string::npos) {
+                    return candidate;
+                }
+            } catch (...) {
+                continue;
+            }
+        }
+        
+        // 如果都不行，返回默认值
+        return "python3";
+    }
+    
 public:
-    PySMTParser(const std::string& python = "python3") : 
+    PySMTParser(const std::string& python = "") : 
         ExternalParser(
             "", 
             "pysmt", 
@@ -219,14 +244,14 @@ public:
             "Python", 
             {"SMT-LIB 2.6", "多种理论支持", "与多种求解器集成"}
         ),
-        python_path(python) {
+        python_path(python.empty() ? findPythonPath() : python) {
         
         // 检查pySMT是否可用
         try {
             std::string check_cmd = python_path + " -c \"import pysmt; print('pySMT available')\"";
             std::string result = exec(check_cmd);
             if (result.find("pySMT available") == std::string::npos) {
-                throw std::runtime_error("pySMT not available");
+                throw std::runtime_error("pySMT not available with " + python_path);
             }
             
             // 获取版本

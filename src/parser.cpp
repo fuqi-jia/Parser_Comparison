@@ -206,6 +206,12 @@ ParseResult PySMTParser::parse(const std::string& filename) {
         // 构建Python命令
         std::string cmd = python_path + " \"" + script_path + "\" \"" + filename + "\"";
         
+        // 调试信息：输出实际执行的命令
+        std::cerr << "DEBUG: 执行的命令: " << cmd << std::endl;
+        std::cerr << "DEBUG: Python路径: " << python_path << std::endl;
+        std::cerr << "DEBUG: 脚本路径: " << script_path << std::endl;
+        std::cerr << "DEBUG: 文件路径: " << filename << std::endl;
+        
         // 执行Python脚本
         std::string output = exec(cmd);
         
