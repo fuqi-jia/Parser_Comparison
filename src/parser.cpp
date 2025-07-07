@@ -209,6 +209,14 @@ ParseResult PySMTParser::parse(const std::string& filename) {
         // 执行Python脚本
         std::string output = exec(cmd);
         
+        // 检查输出是否为空
+        if (output.empty()) {
+            result.success = false;
+            result.errors.push_back("Python脚本没有输出");
+            result.errors.push_back("执行的命令: " + cmd);
+            return result;
+        }
+        
         // 解析JSON输出
         try {
             SimpleJson::Value json = SimpleJson::Parser::parse(output);
@@ -230,6 +238,15 @@ ParseResult PySMTParser::parse(const std::string& filename) {
             result.success = false;
             result.errors.push_back(std::string("解析JSON输出失败: ") + e.what());
             result.errors.push_back("原始输出: " + output);
+            result.errors.push_back("执行的命令: " + cmd);
+            
+            // 尝试查找是否有常见的错误模式
+            if (output.find("list index out of range") != std::string::npos) {
+                result.errors.push_back("检测到list index out of range错误，这可能是由于参数传递或环境问题引起的");
+            }
+            if (output.find("ImportError") != std::string::npos) {
+                result.errors.push_back("检测到ImportError，请检查pySMT是否正确安装");
+            }
         }
         
     } catch (const std::exception& e) {

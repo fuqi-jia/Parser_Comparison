@@ -302,7 +302,19 @@ void ParserManager::benchmarkFilesWithParser(const std::vector<std::string>& fil
         } else {
             std::cout << " - " << (result.success ? "成功" : "失败") << std::endl;
             if (!result.success && !result.errors.empty()) {
-                std::cout << "  错误: " << result.errors[0] << std::endl;
+                // 查找最有用的错误信息
+                std::string primaryError = result.errors[0];
+                for (const auto& error : result.errors) {
+                    if (error.find("list index out of range") != std::string::npos) {
+                        primaryError = error;
+                        break;
+                    }
+                    if (error.find("解析文件失败") != std::string::npos) {
+                        primaryError = error;
+                        break;
+                    }
+                }
+                std::cout << "  错误: " << primaryError << std::endl;
             }
         }
         

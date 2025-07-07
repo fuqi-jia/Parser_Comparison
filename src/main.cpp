@@ -59,6 +59,9 @@ std::map<std::string, std::vector<std::string>> parseArgs(int argc, char* argv[]
             
             // 初始化空向量
             if (args.find(option) == args.end()) {
+                if(option == "p") option = "parser";
+                if(option == "f") option = "file";
+                if(option == "d") option = "dir";
                 args[option] = std::vector<std::string>();
             }
             

@@ -6,13 +6,12 @@ import time
 import json
 import resource
 import traceback
+import os
 from pathlib import Path
 
 try:
     from pysmt.smtlib.parser import SmtLibParser
-    from pysmt.smtlib.script import SmtLibScript
     from pysmt.environment import get_env
-    from pysmt.fnode import FNode
 except ImportError as e:
     print(json.dumps({
         "success": False,
@@ -20,19 +19,8 @@ except ImportError as e:
         "memory_usage": 0,
         "ast_node_count": 0,
         "errors": [f"pySMT未安装或导入失败: {str(e)}"]
-    }))
+    }), file=sys.stderr)
     sys.exit(1)
-
-def count_nodes(node):
-    """递归计算AST节点数"""
-    if not isinstance(node, FNode):
-        return 1
-    
-    count = 1
-    if hasattr(node, 'args') and node.args:
-        for arg in node.args:
-            count += count_nodes(arg)
-    return count
 
 def get_memory_usage():
     """获取当前内存使用量(KB)"""
@@ -47,6 +35,26 @@ def get_memory_usage():
     except:
         return 0
 
+def count_formula_nodes(formula):
+    """递归计算公式的节点数"""
+    try:
+        if formula is None:
+            return 0
+        
+        # 对于原子公式（变量、常数等），返回1
+        if hasattr(formula, 'is_symbol') and (formula.is_symbol() or formula.is_constant()):
+            return 1
+        
+        # 对于复合公式，递归计算子公式的节点数
+        count = 1  # 当前节点
+        if hasattr(formula, 'args') and formula.args():
+            for arg in formula.args():
+                count += count_formula_nodes(arg)
+        
+        return count
+    except:
+        return 1
+
 def parse_smt_file(filename):
     """解析SMT文件并返回结果"""
     result = {
@@ -58,20 +66,39 @@ def parse_smt_file(filename):
     }
     
     try:
+        # 添加调试信息
+        debug_info = {
+            "cwd": os.getcwd(),
+            "file_path": os.path.abspath(filename),
+            "file_exists": os.path.exists(filename),
+            "python_version": sys.version,
+            "argv": sys.argv
+        }
+        
         # 检查文件是否存在
         if not Path(filename).exists():
             result["errors"].append(f"文件不存在: {filename}")
+            result["errors"].append(f"调试信息: {debug_info}")
             return result
         
         # 记录开始时间和内存
         start_time = time.time()
         start_memory = get_memory_usage()
         
-        # 创建解析器
+        # 创建解析器和环境
         parser = SmtLibParser()
         
         # 解析文件
-        script = parser.get_script_fname(filename)
+        try:
+            script = parser.get_script_fname(filename)
+        except Exception as parse_error:
+            result["errors"].append(f"解析文件失败: {str(parse_error)}")
+            result["errors"].append(f"错误类型: {type(parse_error).__name__}")
+            result["errors"].append(f"调试信息: {debug_info}")
+            # 添加详细的错误跟踪
+            tb_str = ''.join(traceback.format_exc())
+            result["errors"].append(f"详细错误跟踪: {tb_str}")
+            return result
         
         # 计算解析时间
         end_time = time.time()
@@ -83,20 +110,34 @@ def parse_smt_file(filename):
         
         # 计算AST节点数
         ast_node_count = 0
-        if hasattr(script, 'commands') and script.commands:
-            ast_node_count = len(script.commands)
-            
-            # 如果可以访问到具体的表达式，计算更详细的节点数
-            try:
-                for cmd in script.commands:
-                    if hasattr(cmd, 'args') and cmd.args:
-                        for arg in cmd.args:
-                            if isinstance(arg, FNode):
-                                ast_node_count += count_nodes(arg)
-            except:
-                # 如果详细计算失败，使用命令数量作为节点数
-                pass
         
+        try:
+            # 计算命令数量
+            if hasattr(script, 'commands') and script.commands:
+                ast_node_count = len(script.commands)
+                
+                # 尝试获取更详细的节点数（通过get_last_formula）
+                try:
+                    last_formula = script.get_last_formula()
+                    if last_formula is not None:
+                        # 使用公式的节点计数
+                        formula_nodes = count_formula_nodes(last_formula)
+                        ast_node_count = max(ast_node_count, formula_nodes)
+                except Exception as formula_error:
+                    # 如果获取公式失败，使用命令数量
+                    result["errors"].append(f"获取公式失败: {str(formula_error)}")
+            elif hasattr(script, 'commands'):
+                # commands存在但为空
+                ast_node_count = 0
+            else:
+                # 无法访问commands，估算为1
+                ast_node_count = 1
+                
+        except Exception as count_error:
+            # 如果计算节点数失败，使用默认值
+            ast_node_count = 1
+            result["errors"].append(f"计算节点数失败: {str(count_error)}")
+            
         # 填充结果
         result["success"] = True
         result["parse_time"] = parse_time
@@ -106,22 +147,33 @@ def parse_smt_file(filename):
     except Exception as e:
         result["success"] = False
         result["errors"].append(f"解析错误: {str(e)}")
-        # 如果有详细的错误信息，也添加进去
-        if hasattr(e, '__traceback__'):
-            tb_str = ''.join(traceback.format_tb(e.__traceback__))
-            result["errors"].append(f"详细错误: {tb_str}")
+        result["errors"].append(f"错误类型: {type(e).__name__}")
+        # 添加详细的错误信息
+        tb_str = ''.join(traceback.format_exc())
+        result["errors"].append(f"详细错误跟踪: {tb_str}")
+        
+        # 添加调试信息
+        debug_info = {
+            "cwd": os.getcwd(),
+            "file_path": os.path.abspath(filename) if filename else "None",
+            "file_exists": os.path.exists(filename) if filename else False,
+            "python_version": sys.version,
+            "argv": sys.argv
+        }
+        result["errors"].append(f"调试信息: {debug_info}")
     
     return result
 
 def main():
     if len(sys.argv) != 2:
-        print(json.dumps({
+        error_result = {
             "success": False,
             "parse_time": 0,
             "memory_usage": 0,
             "ast_node_count": 0,
-            "errors": ["用法: python pysmt_parser.py <smt_file>"]
-        }))
+            "errors": [f"用法: python pysmt_parser.py <smt_file>", f"接收到的参数: {sys.argv}"]
+        }
+        print(json.dumps(error_result, ensure_ascii=False, indent=2))
         sys.exit(1)
     
     filename = sys.argv[1]
