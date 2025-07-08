@@ -113,95 +113,80 @@ ParseResult NativeParser::parse(const std::string& filename) {
 ParseResult PySMTParser::parse(const std::string& filename) {
     ParseResult result;
     
-    // 创建唯一的临时文件名
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(1000, 9999);
-    std::string temp_script = "/tmp/pysmt_parse_" + std::to_string(dis(gen)) + ".py";
-    std::string output_file = "/tmp/pysmt_result_" + std::to_string(dis(gen)) + ".txt";
-    
-    // 写入Python脚本
-    std::ofstream script(temp_script);
-    script << "import time\n";
-    script << "import resource\n";
-    script << "import sys\n";
-    script << "from pysmt.smtlib.parser import SmtLibParser\n\n";
-    script << "try:\n";
-    script << "    # 记录开始时间和内存\n";
-    script << "    start_time = time.time()\n";
-    script << "    start_mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss\n\n";
-    script << "    # 创建解析器并解析文件\n";
-    script << "    parser = SmtLibParser()\n";
-    script << "    script = parser.get_script_fname('" << filename << "')\n\n";
-    script << "    # 记录结束时间和内存\n";
-    script << "    end_time = time.time()\n";
-    script << "    end_mem = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss\n\n";
-    script << "    # 计算AST节点数\n";
-    script << "    node_count = 0\n";
-    script << "    try:\n";
-    script << "        if hasattr(script, 'commands') and script.commands:\n";
-    script << "            node_count = len(script.commands)\n";
-    script << "            # 尝试获取更详细的节点数\n";
-    script << "            try:\n";
-    script << "                last_formula = script.get_last_formula()\n";
-    script << "                if last_formula is not None:\n";
-    script << "                    node_count = max(node_count, last_formula.size() if hasattr(last_formula, 'size') else len(str(last_formula)))\n";
-    script << "            except:\n";
-    script << "                pass\n";
-    script << "    except Exception as e:\n";
-    script << "        node_count = 1\n\n";
-    script << "    # 写入结果\n";
-    script << "    with open('" << output_file << "', 'w') as f:\n";
-    script << "        f.write('SUCCESS\\n')\n";
-    script << "        f.write(f'PARSE_TIME:{(end_time - start_time) * 1000:.2f}\\n')\n";
-    script << "        f.write(f'MEMORY_USAGE:{end_mem - start_mem}\\n')\n";
-    script << "        f.write(f'AST_NODES:{node_count}\\n')\n";
-    script << "except Exception as e:\n";
-    script << "    with open('" << output_file << "', 'w') as f:\n";
-    script << "        f.write('FAILURE\\n')\n";
-    script << "        f.write(f'ERROR:{str(e)}\\n')\n";
-    script.close();
-    
-    // 执行Python脚本
-    std::string cmd = python_path + " " + temp_script;
     try {
-        exec(cmd);
+        // 获取pySMT解析器脚本的路径
+        std::filesystem::path current_path = std::filesystem::current_path();
+        std::string script_path;
         
-        // 读取结果
-        std::ifstream output(output_file);
-        std::string line;
+        // 尝试多个可能的位置
+        std::vector<std::string> possible_paths = {
+            (current_path / "external" / "pysmt" / "pysmt_parser.py").string(),
+            (current_path / ".." / "external" / "pysmt" / "pysmt_parser.py").string(),
+            (std::filesystem::absolute("external/pysmt/pysmt_parser.py")).string(),
+            (std::filesystem::absolute("../external/pysmt/pysmt_parser.py")).string()
+        };
         
-        // 读取第一行判断成功与否
-        std::getline(output, line);
-        result.success = (line == "SUCCESS");
-        
-        if (result.success) {
-            // 读取解析时间
-            std::getline(output, line);
-            result.parse_time = std::stod(line.substr(line.find(":") + 1));
-            
-            // 读取内存使用
-            std::getline(output, line);
-            result.memory_usage = std::stoul(line.substr(line.find(":") + 1));
-            
-            // 读取AST节点数
-            std::getline(output, line);
-            result.ast_node_count = std::stoul(line.substr(line.find(":") + 1));
-        } else {
-            // 读取错误信息
-            std::getline(output, line);
-            result.errors.push_back(line.substr(line.find(":") + 1));
+        for (const auto& path : possible_paths) {
+            if (std::filesystem::exists(path)) {
+                script_path = path;
+                break;
+            }
         }
         
-        output.close();
+        if (script_path.empty()) {
+            throw std::runtime_error("无法找到pysmt_parser.py脚本");
+        }
+        
+        // 构建Python命令
+        std::string cmd = python_path + " \"" + script_path + "\" \"" + filename + "\"";
+        
+        // 执行Python脚本
+        std::string output = exec(cmd);
+        
+        // 检查输出是否为空
+        if (output.empty()) {
+            result.success = false;
+            result.errors.push_back("Python脚本没有输出");
+            result.errors.push_back("执行的命令: " + cmd);
+            return result;
+        }
+        
+        // 解析JSON输出
+        try {
+            SimpleJson::Value json = SimpleJson::Parser::parse(output);
+            
+            // 填充结果结构
+            result.success = json["success"].getBool();
+            result.parse_time = json["parse_time"].getNumber();
+            result.memory_usage = static_cast<size_t>(json["memory_usage"].getNumber());
+            result.ast_node_count = static_cast<size_t>(json["ast_node_count"].getNumber());
+            
+            // 获取错误信息
+            if (json["errors"].isArray()) {
+                const auto& errors = json["errors"].getArray();
+                for (const auto& err : errors) {
+                    result.errors.push_back(err.getString());
+                }
+            }
+        } catch (const std::exception& e) {
+            result.success = false;
+            result.errors.push_back(std::string("解析JSON输出失败: ") + e.what());
+            result.errors.push_back("原始输出: " + output);
+            result.errors.push_back("执行的命令: " + cmd);
+            
+            // 尝试查找是否有常见的错误模式
+            if (output.find("list index out of range") != std::string::npos) {
+                result.errors.push_back("检测到list index out of range错误，这可能是由于参数传递或环境问题引起的");
+            }
+            if (output.find("ImportError") != std::string::npos) {
+                result.errors.push_back("检测到ImportError，请检查pySMT是否正确安装");
+            }
+        }
+        
     } catch (const std::exception& e) {
         result.success = false;
-        result.errors.push_back(std::string("执行错误: ") + e.what());
+        result.errors.push_back(std::string("执行pySMT解析器失败: ") + e.what());
     }
-    
-    // 清理临时文件
-    std::remove(temp_script.c_str());
-    std::remove(output_file.c_str());
     
     return result;
 }
