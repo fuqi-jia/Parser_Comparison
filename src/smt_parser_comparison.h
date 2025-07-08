@@ -317,11 +317,17 @@ public:
     
     // 测试多个文件的性能
     void benchmarkFiles(const std::vector<std::string>& filenames);
+    void benchmarkFiles(const std::vector<std::string>& filenames, const std::string& outputFilename);
     
     // 生成性能对比报告
     void generateReport(
         const std::vector<std::string>& filenames,
         const std::vector<std::vector<ParseResult>>& all_results
+    );
+    void generateReport(
+        const std::vector<std::string>& filenames,
+        const std::vector<std::vector<ParseResult>>& all_results,
+        const std::string& outputFilename
     );
     
     // 获取已加载的解析器数量
@@ -343,12 +349,19 @@ public:
     
     // 对特定解析器进行基准测试
     void benchmarkFilesWithParser(const std::vector<std::string>& filenames, const std::string& parserName);
+    void benchmarkFilesWithParser(const std::vector<std::string>& filenames, const std::string& parserName, const std::string& outputFilename);
     
     // 生成单个解析器的报告
     void generateSingleParserReport(
         const std::string& parserName,
         const std::vector<std::string>& filenames,
         const std::vector<ParseResult>& results
+    );
+    void generateSingleParserReport(
+        const std::string& parserName,
+        const std::vector<std::string>& filenames,
+        const std::vector<ParseResult>& results,
+        const std::string& outputFilename
     );
 };
 

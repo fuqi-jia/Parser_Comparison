@@ -19,6 +19,7 @@ void printUsage(const char* progName) {
     std::cout << "  -f, --file    指定要测试的SMT文件路径 (用于test命令)\n";
     std::cout << "  -d, --dir     指定要批量测试的目录 (用于batch命令)\n";
     std::cout << "  -p, --parser  指定要使用的解析器名称 (可选)\n";
+    std::cout << "  -o, --output  指定输出CSV文件名 (可选)\n";
     std::cout << "  -h, --help    显示此帮助信息\n\n";
     std::cout << "示例:\n";
     std::cout << "  " << progName << " list\n";
@@ -26,6 +27,7 @@ void printUsage(const char* progName) {
     std::cout << "  " << progName << " benchmark --file test1.smt2 test2.smt2\n";
     std::cout << "  " << progName << " benchmark --parser native --file test1.smt2\n";
     std::cout << "  " << progName << " batch --dir ../benchmarks\n";
+    std::cout << "  " << progName << " batch --parser pysmt --dir test --output my_results.csv\n";
     std::cout << "\n可用解析器名称: native, pysmt, antlr, jsmtlib\n";
 }
 
@@ -50,7 +52,8 @@ std::map<std::string, std::vector<std::string>> parseArgs(int argc, char* argv[]
         // 处理选项
         if (arg == "--file" || arg == "-f" ||
             arg == "--dir" || arg == "-d" ||
-            arg == "--parser" || arg == "-p") {
+            arg == "--parser" || arg == "-p" ||
+            arg == "--output" || arg == "-o") {
             
             // 提取选项名（不含前缀）
             std::string option = (arg.substr(0, 2) == "--") ? 
@@ -62,6 +65,7 @@ std::map<std::string, std::vector<std::string>> parseArgs(int argc, char* argv[]
                 if(option == "p") option = "parser";
                 if(option == "f") option = "file";
                 if(option == "d") option = "dir";
+                if(option == "o") option = "output";
                 args[option] = std::vector<std::string>();
             }
             
@@ -110,6 +114,12 @@ int main(int argc, char* argv[]) {
         parserName = args["parser"][0];
     }
     
+    // 获取输出文件名（如果指定）
+    std::string outputFilename;
+    if (args.find("output") != args.end() && !args["output"].empty()) {
+        outputFilename = args["output"][0];
+    }
+    
     if (command == "list") {
         // 列出所有可用的解析器
         manager.listParsers();
@@ -154,14 +164,22 @@ int main(int argc, char* argv[]) {
         if (!parserName.empty()) {
             // 使用指定的解析器进行基准测试
             try {
-                manager.benchmarkFilesWithParser(filenames, parserName);
+                if (!outputFilename.empty()) {
+                    manager.benchmarkFilesWithParser(filenames, parserName, outputFilename);
+                } else {
+                    manager.benchmarkFilesWithParser(filenames, parserName);
+                }
             } catch (const std::exception& e) {
                 std::cerr << "错误: " << e.what() << std::endl;
                 return 1;
             }
         } else {
             // 使用所有解析器进行基准测试
-            manager.benchmarkFiles(filenames);
+            if (!outputFilename.empty()) {
+                manager.benchmarkFiles(filenames, outputFilename);
+            } else {
+                manager.benchmarkFiles(filenames);
+            }
         }
         
         return 0;
@@ -198,14 +216,22 @@ int main(int argc, char* argv[]) {
             if (!parserName.empty()) {
                 // 使用指定的解析器进行基准测试
                 try {
-                    manager.benchmarkFilesWithParser(filenames, parserName);
+                    if (!outputFilename.empty()) {
+                        manager.benchmarkFilesWithParser(filenames, parserName, outputFilename);
+                    } else {
+                        manager.benchmarkFilesWithParser(filenames, parserName);
+                    }
                 } catch (const std::exception& e) {
                     std::cerr << "错误: " << e.what() << std::endl;
                     return 1;
                 }
             } else {
                 // 使用所有解析器进行基准测试
-                manager.benchmarkFiles(filenames);
+                if (!outputFilename.empty()) {
+                    manager.benchmarkFiles(filenames, outputFilename);
+                } else {
+                    manager.benchmarkFiles(filenames);
+                }
             }
             
             return 0;

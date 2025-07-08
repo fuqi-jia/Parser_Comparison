@@ -360,7 +360,8 @@ std::vector<ParseResult> ParserManager::testFile(const std::string& filename) {
     
     for (const auto& parser : parsers) {
         try {
-            std::cout << "使用 " << parser->getName() << " 解析 " << filename << std::endl;
+            std::string abs_filename = std::filesystem::absolute(filename).string();
+            std::cout << "使用 " << parser->getName() << " 解析 " << abs_filename << std::endl;
             
             ParseResult result = parser->parse(filename);
             
@@ -461,10 +462,9 @@ void ParserManager::generateReport(
     // 写入CSV表头
     csv << "解析器,语言,版本";
     for (const auto& filename : filenames) {
-        size_t pos = filename.find_last_of("/\\");
-        std::string short_name = (pos != std::string::npos) ? filename.substr(pos + 1) : filename;
-        csv << ",时间(" << short_name << "),内存(" << short_name << "),"
-            << "节点数(" << short_name << "),成功(" << short_name << ")";
+        std::string abs_filename = std::filesystem::absolute(filename).string();
+        csv << ",时间(" << abs_filename << "),内存(" << abs_filename << "),"
+            << "节点数(" << abs_filename << "),成功(" << abs_filename << ")";
     }
     csv << ",平均时间(ms),平均内存(KB),平均节点数,成功率(%)" << std::endl;
     
@@ -560,7 +560,8 @@ ParseResult ParserManager::testFileWithParser(const std::string& filename, const
         return result;
     }
     
-    std::cout << "使用 " << parser->getName() << " 解析器测试文件: " << filename << std::endl;
+    std::string abs_filename = std::filesystem::absolute(filename).string();
+    std::cout << "使用 " << parser->getName() << " 解析器测试文件: " << abs_filename << std::endl;
     
     ParseResult result;
     try {
@@ -626,7 +627,8 @@ void ParserManager::benchmarkFilesWithParser(const std::vector<std::string>& fil
         }
         
         // 输出简要结果
-        std::cout << "文件: " << std::filesystem::path(filename).filename().string();
+        std::string abs_filename = std::filesystem::absolute(filename).string();
+        std::cout << "文件: " << abs_filename;
         if (hadException) {
             std::cout << " - 异常/崩溃" << std::endl;
             if (!result.errors.empty()) {
@@ -684,10 +686,10 @@ void ParserManager::generateSingleParserReport(
     
     // 写入每个文件的结果
     for (size_t i = 0; i < filenames.size() && i < results.size(); ++i) {
-        std::string file_basename = std::filesystem::path(filenames[i]).filename().string();
+        std::string abs_filename = std::filesystem::absolute(filenames[i]).string();
         const auto& result = results[i];
         
-        report << file_basename << ",";
+        report << abs_filename << ",";
         report << result.parse_time << ",";
         report << result.memory_usage << ",";
         report << result.ast_node_count << ",";
@@ -715,6 +717,263 @@ void ParserManager::generateSingleParserReport(
     report << success_rate << "%" << std::endl;
     
     std::cout << "生成报告: " << filename << std::endl;
+}
+
+// 重载版本：带输出文件名的benchmarkFiles
+void ParserManager::benchmarkFiles(const std::vector<std::string>& filenames, const std::string& outputFilename) {
+    // 准备结果矩阵
+    std::vector<std::vector<ParseResult>> all_results;
+    
+    for (const auto& filename : filenames) {
+        std::vector<ParseResult> file_results = testFile(filename);
+        all_results.push_back(file_results);
+    }
+    
+    // 生成对比报告
+    generateReport(filenames, all_results, outputFilename);
+}
+
+// 重载版本：带输出文件名的generateReport
+void ParserManager::generateReport(
+    const std::vector<std::string>& filenames,
+    const std::vector<std::vector<ParseResult>>& all_results,
+    const std::string& outputFilename
+) {
+    // 输出到控制台
+    std::cout << "\n========== SMT解析器性能对比报告 ==========\n" << std::endl;
+    
+    // 计算平均值
+    for (size_t p = 0; p < parsers.size(); p++) {
+        double avg_time = 0;
+        size_t avg_memory = 0;
+        size_t avg_nodes = 0;
+        size_t success_count = 0;
+        
+        std::cout << parsers[p]->getName() << " (" << parsers[p]->getLanguage() << "):" << std::endl;
+        
+        for (size_t f = 0; f < filenames.size(); f++) {
+            if (f < all_results.size() && p < all_results[f].size()) {
+                const auto& result = all_results[f][p];
+                
+                if (result.success) {
+                    avg_time += result.parse_time;
+                    avg_memory += result.memory_usage;
+                    avg_nodes += result.ast_node_count;
+                    success_count++;
+                }
+                
+                std::cout << "  " << filenames[f] << ": "
+                          << (result.success ? "成功" : "失败") << ", "
+                          << result.parse_time << " ms, "
+                          << result.memory_usage << " KB, "
+                          << result.ast_node_count << " 节点" << std::endl;
+            }
+        }
+        
+        if (success_count > 0) {
+            avg_time /= success_count;
+            avg_memory /= success_count;
+            avg_nodes /= success_count;
+            
+            std::cout << "  平均: "
+                      << avg_time << " ms, "
+                      << avg_memory << " KB, "
+                      << avg_nodes << " 节点, "
+                      << "成功率: " << (success_count * 100 / filenames.size()) << "%" << std::endl;
+        } else {
+            std::cout << "  没有成功解析任何文件" << std::endl;
+        }
+        
+        std::cout << std::endl;
+    }
+    
+    // 输出到CSV文件（使用指定的文件名）
+    std::ofstream csv(outputFilename);
+    
+    // 写入CSV表头
+    csv << "解析器,语言,版本";
+    for (const auto& filename : filenames) {
+        std::string abs_filename = std::filesystem::absolute(filename).string();
+        csv << ",时间(" << abs_filename << "),内存(" << abs_filename << "),"
+            << "节点数(" << abs_filename << "),成功(" << abs_filename << ")";
+    }
+    csv << ",平均时间(ms),平均内存(KB),平均节点数,成功率(%)" << std::endl;
+    
+    // 写入每个解析器的结果
+    for (size_t p = 0; p < parsers.size(); p++) {
+        double avg_time = 0;
+        size_t avg_memory = 0;
+        size_t avg_nodes = 0;
+        size_t success_count = 0;
+        
+        csv << parsers[p]->getName() << ","
+            << parsers[p]->getLanguage() << ","
+            << parsers[p]->getVersion();
+        
+        for (size_t f = 0; f < filenames.size(); f++) {
+            if (f < all_results.size() && p < all_results[f].size()) {
+                const auto& result = all_results[f][p];
+                
+                csv << "," << result.parse_time
+                    << "," << result.memory_usage
+                    << "," << result.ast_node_count
+                    << "," << (result.success ? "true" : "false");
+                
+                if (result.success) {
+                    avg_time += result.parse_time;
+                    avg_memory += result.memory_usage;
+                    avg_nodes += result.ast_node_count;
+                    success_count++;
+                }
+            } else {
+                csv << ",0,0,0,false";
+            }
+        }
+        
+        if (success_count > 0) {
+            avg_time /= success_count;
+            avg_memory /= success_count;
+            avg_nodes /= success_count;
+        }
+        
+        csv << "," << avg_time
+            << "," << avg_memory
+            << "," << avg_nodes
+            << "," << (success_count * 100 / filenames.size()) << std::endl;
+    }
+    
+    std::cout << "性能对比报告已保存到 " << outputFilename << std::endl;
+}
+
+// 重载版本：带输出文件名的benchmarkFilesWithParser
+void ParserManager::benchmarkFilesWithParser(const std::vector<std::string>& filenames, const std::string& parserName, const std::string& outputFilename) {
+    auto parser = getParserByName(parserName);
+    if (!parser) {
+        std::cerr << "找不到解析器: " << parserName << std::endl;
+        return;
+    }
+    
+    std::vector<ParseResult> results;
+    size_t success_count = 0;
+    size_t failure_count = 0;
+    size_t crash_count = 0;
+    
+    // 对每个文件执行测试
+    for (const auto& filename : filenames) {
+        ParseResult result;
+        bool hadException = false;
+        
+        try {
+            result = parser->parse(filename);
+            if (result.success) {
+                success_count++;
+            } else {
+                failure_count++;
+            }
+        } catch (const std::exception& e) {
+            hadException = true;
+            result.success = false;
+            result.errors.push_back(std::string("解析过程异常: ") + e.what());
+            crash_count++;
+        } catch (...) {
+            hadException = true;
+            result.success = false;
+            result.errors.push_back("解析过程发生未知异常或崩溃");
+            crash_count++;
+        }
+        
+        // 输出简要结果
+        std::string abs_filename = std::filesystem::absolute(filename).string();
+        std::cout << "文件: " << abs_filename;
+        if (hadException) {
+            std::cout << " - 异常/崩溃" << std::endl;
+            if (!result.errors.empty()) {
+                std::cout << "  错误: " << result.errors[0] << std::endl;
+            }
+        } else {
+            std::cout << " - " << (result.success ? "成功" : "失败") << std::endl;
+            if (!result.success && !result.errors.empty()) {
+                std::cout << "  错误: " << result.errors[0] << std::endl;
+            }
+        }
+        
+        results.push_back(result);
+    }
+    
+    // 生成报告
+    generateSingleParserReport(parserName, filenames, results, outputFilename);
+    
+    // 输出摘要信息
+    double success_rate = filenames.empty() ? 0 : (static_cast<double>(success_count) / filenames.size() * 100.0);
+    double failure_rate = filenames.empty() ? 0 : (static_cast<double>(failure_count) / filenames.size() * 100.0);
+    double crash_rate = filenames.empty() ? 0 : (static_cast<double>(crash_count) / filenames.size() * 100.0);
+    
+    std::cout << "\n===== " << parserName << " 解析器测试摘要 =====" << std::endl;
+    std::cout << "总文件数: " << filenames.size() << std::endl;
+    std::cout << "成功: " << success_count << " (" << std::fixed << std::setprecision(2) 
+              << success_rate << "%)" << std::endl;
+    std::cout << "失败: " << failure_count << " (" << std::fixed << std::setprecision(2) 
+              << failure_rate << "%)" << std::endl;
+    std::cout << "崩溃/异常: " << crash_count << " (" << std::fixed << std::setprecision(2) 
+              << crash_rate << "%)" << std::endl;
+}
+
+// 重载版本：带输出文件名的generateSingleParserReport
+void ParserManager::generateSingleParserReport(
+    const std::string& parserName,
+    const std::vector<std::string>& filenames,
+    const std::vector<ParseResult>& results,
+    const std::string& outputFilename
+) {
+    // 创建CSV文件
+    std::ofstream report(outputFilename);
+    if (!report) {
+        std::cerr << "无法创建报告文件: " << outputFilename << std::endl;
+        return;
+    }
+    
+    // 写入CSV头
+    report << "文件名,解析时间(ms),内存使用(KB),AST节点数量,结果" << std::endl;
+    
+    // 计算统计信息
+    size_t success_count = 0;
+    double total_time = 0;
+    size_t total_memory = 0;
+    size_t total_nodes = 0;
+    
+    // 写入每个文件的结果
+    for (size_t i = 0; i < filenames.size() && i < results.size(); ++i) {
+        std::string abs_filename = std::filesystem::absolute(filenames[i]).string();
+        const auto& result = results[i];
+        
+        report << abs_filename << ",";
+        report << result.parse_time << ",";
+        report << result.memory_usage << ",";
+        report << result.ast_node_count << ",";
+        report << (result.success ? "成功" : "失败") << std::endl;
+        
+        // 更新统计信息
+        if (result.success) {
+            success_count++;
+            total_time += result.parse_time;
+            total_memory += result.memory_usage;
+            total_nodes += result.ast_node_count;
+        }
+    }
+    
+    // 写入汇总统计
+    double success_rate = filenames.empty() ? 0 : (static_cast<double>(success_count) / filenames.size() * 100.0);
+    double avg_time = success_count > 0 ? (total_time / success_count) : 0;
+    double avg_memory = success_count > 0 ? (static_cast<double>(total_memory) / success_count) : 0;
+    double avg_nodes = success_count > 0 ? (static_cast<double>(total_nodes) / success_count) : 0;
+    
+    report << "平均值,";
+    report << avg_time << ",";
+    report << avg_memory << ",";
+    report << avg_nodes << ",";
+    report << success_rate << "%" << std::endl;
+    
+    std::cout << "生成报告: " << outputFilename << std::endl;
 }
 
 } // namespace SMTComparison 
