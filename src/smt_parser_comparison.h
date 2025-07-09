@@ -29,6 +29,9 @@
 
 namespace SMTComparison {
 
+// 全局超时设置（秒）
+extern int g_timeout_seconds;
+
 // 安全执行解析函数，防止段错误导致程序中断
 // 返回值: true表示解析成功，false表示解析失败或发生段错误
 bool safeExecute(std::function<bool()> parseFunc, int timeoutSeconds = 30);
@@ -158,17 +161,32 @@ protected:
     std::string parser_language;
     std::vector<std::string> parser_features;
     
-    // 执行shell命令并返回结果
-    std::string exec(const std::string& cmd) {
+    // 执行shell命令并返回结果（带超时功能）
+    std::string exec(const std::string& cmd, int timeout_seconds = -1) {
+        // 如果没有指定超时时间，使用全局设置
+        if (timeout_seconds == -1) {
+            timeout_seconds = g_timeout_seconds;
+        }
+        // 使用timeout命令包装原始命令
+        std::string timeout_cmd = "timeout " + std::to_string(timeout_seconds) + " " + cmd;
+        
         std::array<char, 128> buffer;
         std::string result;
-        std::unique_ptr<FILE, int(*)(FILE*)> pipe(popen(cmd.c_str(), "r"), pclose);
+        FILE* pipe = popen(timeout_cmd.c_str(), "r");
         if (!pipe) {
             throw std::runtime_error("popen() failed!");
         }
-        while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+        
+        while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
             result += buffer.data();
         }
+        
+        // 检查退出状态
+        int exit_code = pclose(pipe);
+        if (WEXITSTATUS(exit_code) == 124) { // timeout命令在超时时返回124
+            throw std::runtime_error("命令执行超时 (" + std::to_string(timeout_seconds) + " 秒)");
+        }
+        
         return result;
     }
 

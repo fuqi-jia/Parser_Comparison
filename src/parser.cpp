@@ -83,17 +83,32 @@ bool ParserInterface::safeParseFile(const std::function<bool()>& parseFunc) {
     return safeExecute(parseFunc);
 }
 
-// 执行外部命令并获取输出的帮助函数
-std::string exec(const std::string& cmd) {
+// 执行外部命令并获取输出的帮助函数（带超时功能）
+std::string exec(const std::string& cmd, int timeout_seconds = -1) {
+    // 如果没有指定超时时间，使用全局设置
+    if (timeout_seconds == -1) {
+        timeout_seconds = SMTComparison::g_timeout_seconds;
+    }
+    // 使用timeout命令包装原始命令
+    std::string timeout_cmd = "timeout " + std::to_string(timeout_seconds) + " " + cmd;
+    
     std::array<char, 4096> buffer;
     std::string result;
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd.c_str(), "r"), pclose);
+    FILE* pipe = popen(timeout_cmd.c_str(), "r");
     if (!pipe) {
         throw std::runtime_error("popen() failed!");
     }
-    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+    
+    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
         result += buffer.data();
     }
+    
+    // 检查退出状态
+    int exit_code = pclose(pipe);
+    if (WEXITSTATUS(exit_code) == 124) { // timeout命令在超时时返回124
+        throw std::runtime_error("命令执行超时 (" + std::to_string(timeout_seconds) + " 秒)");
+    }
+    
     return result;
 }
 

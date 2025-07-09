@@ -10,17 +10,35 @@
 
 namespace SMTComparison {
 
-// 执行外部命令并获取输出的帮助函数
-std::string exec(const std::string& cmd) {
+// 全局超时设置（秒）
+int g_timeout_seconds = 60;
+
+// 执行外部命令并获取输出的帮助函数（带超时功能）
+std::string exec(const std::string& cmd, int timeout_seconds = -1) {
+    // 如果没有指定超时时间，使用全局设置
+    if (timeout_seconds == -1) {
+        timeout_seconds = g_timeout_seconds;
+    }
+    // 使用timeout命令包装原始命令
+    std::string timeout_cmd = "timeout " + std::to_string(timeout_seconds) + " " + cmd;
+    
     std::array<char, 4096> buffer;
     std::string result;
-    std::unique_ptr<FILE, int(*)(FILE*)> pipe(popen(cmd.c_str(), "r"), pclose);
+    FILE* pipe = popen(timeout_cmd.c_str(), "r");
     if (!pipe) {
         throw std::runtime_error("popen() failed!");
     }
-    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+    
+    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr) {
         result += buffer.data();
     }
+    
+    // 检查退出状态
+    int exit_code = pclose(pipe);
+    if (WEXITSTATUS(exit_code) == 124) { // timeout命令在超时时返回124
+        throw std::runtime_error("命令执行超时 (" + std::to_string(timeout_seconds) + " 秒)");
+    }
+    
     return result;
 }
 
@@ -195,36 +213,34 @@ ParseResult PySMTParser::parse(const std::string& filename) {
 ParseResult ANTLRParser::parse(const std::string& filename) {
     ParseResult result;
     
-    // 创建临时输出文件
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(1000, 9999);
-    std::string output_file = "/tmp/antlr_result_" + std::to_string(dis(gen)) + ".txt";
-    
     // 执行ANTLR解析器
-    std::string cmd = parser_path + " " + filename + " > " + output_file + " 2>&1";
+    std::string cmd = parser_path + " " + filename + " 2>&1";
     
     // 记录开始时间和内存
     size_t memory_before = PerformanceMetrics::getCurrentMemoryUsage();
     
-    // 测量执行时间
-    result.parse_time = PerformanceMetrics::measureExecutionTime([&]() {
-        int ret = system(cmd.c_str()); // 处理返回值，避免警告
-        if (ret != 0) {
-            std::cerr << "ANTLR命令执行失败，返回值: " << ret << std::endl;
-        }
-    });
+    // 测量执行时间并执行命令（带超时）
+    std::string output;
+    try {
+        result.parse_time = PerformanceMetrics::measureExecutionTime([&]() {
+            output = exec(cmd); // 使用带超时的exec函数
+        });
+    } catch (const std::exception& e) {
+        result.success = false;
+        result.errors.push_back(e.what());
+        return result;
+    }
     
     // 计算内存使用
     size_t memory_after = PerformanceMetrics::getCurrentMemoryUsage();
     result.memory_usage = memory_after - memory_before;
     
-    // 读取结果
-    std::ifstream output(output_file);
+    // 解析输出结果
+    std::istringstream iss(output);
     std::string line;
     bool has_errors = false;
     
-    while (std::getline(output, line)) {
+    while (std::getline(iss, line)) {
         if (line.find("ERROR") != std::string::npos || 
             line.find("Exception") != std::string::npos) {
             has_errors = true;
@@ -236,9 +252,6 @@ ParseResult ANTLRParser::parse(const std::string& filename) {
             result.ast_node_count = std::stoul(line.substr(line.find(":") + 1));
         }
     }
-    
-    output.close();
-    std::remove(output_file.c_str());
     
     // 如果没有提供明确信息，设置默认值
     if (result.ast_node_count == 0) {
@@ -254,45 +267,40 @@ ParseResult ANTLRParser::parse(const std::string& filename) {
 ParseResult JSMTLIBParser::parse(const std::string& filename) {
     ParseResult result;
     
-    // 创建临时输出文件
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dis(1000, 9999);
-    std::string output_file = "/tmp/jsmtlib_result_" + std::to_string(dis(gen)) + ".txt";
-    
     // 执行jSMTLIB解析器
-    std::string cmd = "java -jar " + parser_path + " -parse " + filename + " > " + output_file + " 2>&1";
+    std::string cmd = "java -jar " + parser_path + " -parse " + filename + " 2>&1";
     
     // 记录开始时间和内存
     size_t memory_before = PerformanceMetrics::getCurrentMemoryUsage();
     
-    // 测量执行时间
-    result.parse_time = PerformanceMetrics::measureExecutionTime([&]() {
-        int ret = system(cmd.c_str()); // 处理返回值，避免警告
-        if (ret != 0) {
-            std::cerr << "jSMTLIB命令执行失败，返回值: " << ret << std::endl;
-        }
-    });
+    // 测量执行时间并执行命令（带超时）
+    std::string output;
+    try {
+        result.parse_time = PerformanceMetrics::measureExecutionTime([&]() {
+            output = exec(cmd); // 使用带超时的exec函数
+        });
+    } catch (const std::exception& e) {
+        result.success = false;
+        result.errors.push_back(e.what());
+        return result;
+    }
     
     // 计算内存使用
     size_t memory_after = PerformanceMetrics::getCurrentMemoryUsage();
     result.memory_usage = memory_after - memory_before;
     
-    // 读取结果
-    std::ifstream output(output_file);
+    // 解析输出结果
+    std::istringstream iss(output);
     std::string line;
     bool has_errors = false;
     
-    while (std::getline(output, line)) {
+    while (std::getline(iss, line)) {
         if (line.find("ERROR") != std::string::npos || 
             line.find("Exception") != std::string::npos) {
             has_errors = true;
             result.errors.push_back(line);
         }
     }
-    
-    output.close();
-    std::remove(output_file.c_str());
     
     result.success = !has_errors;
     
@@ -346,7 +354,7 @@ std::vector<ParseResult> ParserManager::testFile(const std::string& filename) {
     for (const auto& parser : parsers) {
         try {
             std::string abs_filename = std::filesystem::absolute(filename).string();
-            std::cout << "使用 " << parser->getName() << " 解析 " << abs_filename << std::endl;
+            std::cout << "使用 " << parser->getName() << " 解析 " << abs_filename << " (超时: " << g_timeout_seconds << "秒)" << std::endl;
             
             ParseResult result = parser->parse(filename);
             
@@ -546,7 +554,7 @@ ParseResult ParserManager::testFileWithParser(const std::string& filename, const
     }
     
     std::string abs_filename = std::filesystem::absolute(filename).string();
-    std::cout << "使用 " << parser->getName() << " 解析器测试文件: " << abs_filename << std::endl;
+    std::cout << "使用 " << parser->getName() << " 解析器测试文件: " << abs_filename << " (超时: " << g_timeout_seconds << "秒)" << std::endl;
     
     ParseResult result;
     try {

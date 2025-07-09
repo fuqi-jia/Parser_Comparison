@@ -16,18 +16,20 @@ void printUsage(const char* progName) {
     std::cout << "  test          测试单个文件\n";
     std::cout << "  batch         批量测试目录中的所有SMT文件\n\n";
     std::cout << "选项:\n";
-    std::cout << "  -f, --file    指定要测试的SMT文件路径 (用于test命令)\n";
-    std::cout << "  -d, --dir     指定要批量测试的目录 (用于batch命令)\n";
-    std::cout << "  -p, --parser  指定要使用的解析器名称 (可选)\n";
-    std::cout << "  -o, --output  指定输出CSV文件名 (可选)\n";
-    std::cout << "  -h, --help    显示此帮助信息\n\n";
+    std::cout << "  -f, --file     指定要测试的SMT文件路径 (用于test命令)\n";
+    std::cout << "  -d, --dir      指定要批量测试的目录 (用于batch命令)\n";
+    std::cout << "  -p, --parser   指定要使用的解析器名称 (可选)\n";
+    std::cout << "  -o, --output   指定输出CSV文件名 (可选)\n";
+    std::cout << "  -t, --timeout  设置解析超时时间(秒) (默认: 60秒)\n";
+    std::cout << "  -h, --help     显示此帮助信息\n\n";
     std::cout << "示例:\n";
     std::cout << "  " << progName << " list\n";
     std::cout << "  " << progName << " test --file test.smt2\n";
+    std::cout << "  " << progName << " test --file test.smt2 --timeout 120\n";
     std::cout << "  " << progName << " benchmark --file test1.smt2 test2.smt2\n";
-    std::cout << "  " << progName << " benchmark --parser native --file test1.smt2\n";
-    std::cout << "  " << progName << " batch --dir ../benchmarks\n";
-    std::cout << "  " << progName << " batch --parser pysmt --dir test --output my_results.csv\n";
+    std::cout << "  " << progName << " benchmark --parser native --file test1.smt2 --timeout 30\n";
+    std::cout << "  " << progName << " batch --dir ../benchmarks --timeout 180\n";
+    std::cout << "  " << progName << " batch --parser pysmt --dir test --output my_results.csv --timeout 300\n";
     std::cout << "\n可用解析器名称: native, pysmt, antlr, jsmtlib\n";
 }
 
@@ -53,7 +55,8 @@ std::map<std::string, std::vector<std::string>> parseArgs(int argc, char* argv[]
         if (arg == "--file" || arg == "-f" ||
             arg == "--dir" || arg == "-d" ||
             arg == "--parser" || arg == "-p" ||
-            arg == "--output" || arg == "-o") {
+            arg == "--output" || arg == "-o" ||
+            arg == "--timeout" || arg == "-t") {
             
             // 提取选项名（不含前缀）
             std::string option = (arg.substr(0, 2) == "--") ? 
@@ -66,6 +69,7 @@ std::map<std::string, std::vector<std::string>> parseArgs(int argc, char* argv[]
                 if(option == "f") option = "file";
                 if(option == "d") option = "dir";
                 if(option == "o") option = "output";
+                if(option == "t") option = "timeout";
                 args[option] = std::vector<std::string>();
             }
             
@@ -119,6 +123,25 @@ int main(int argc, char* argv[]) {
     if (args.find("output") != args.end() && !args["output"].empty()) {
         outputFilename = args["output"][0];
     }
+    
+    // 获取超时时间（如果指定，默认为60秒）
+    int timeoutSeconds = 60;
+    if (args.find("timeout") != args.end() && !args["timeout"].empty()) {
+        try {
+            timeoutSeconds = std::stoi(args["timeout"][0]);
+            if (timeoutSeconds <= 0) {
+                std::cerr << "错误: 超时时间必须为正整数" << std::endl;
+                return 1;
+            }
+            std::cout << "使用自定义超时时间: " << timeoutSeconds << " 秒" << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "错误: 无效的超时时间值: " << args["timeout"][0] << std::endl;
+            return 1;
+        }
+    }
+    
+    // 设置全局超时值
+    SMTComparison::g_timeout_seconds = timeoutSeconds;
     
     if (command == "list") {
         // 列出所有可用的解析器
