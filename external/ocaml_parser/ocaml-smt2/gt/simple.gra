@@ -1,0 +1,17 @@
+simple
+
+line_comment  = "#"
+
+Nil : ps -> 
+Consa : ps -> ps op
+
+Plus : op -> PLUS
+Times : op -> TIMES
+
+PLUS = "+"
+TIMES = "*"
+
+{{ 
+type extradata = int;;
+let initial_data() = 0;;
+}}

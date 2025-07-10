@@ -1,0 +1,122 @@
+smtlib
+
+line_comment = ";"
+
+Commands : commands -> { command }*
+
+CommandSetLogic : command -> LPAREN SETLOGIC symbol RPAREN
+CommandSetOption : command -> LPAREN SETOPTION an_option RPAREN
+CommandSetInfo : command -> LPAREN SETINFO attribute RPAREN
+CommandDeclareSort : command -> LPAREN DECLARESORT symbol NUMERAL RPAREN
+CommandDefineSort : command -> LPAREN DEFINESORT symbol LPAREN { symbol }* RPAREN sort RPAREN
+CommandDeclareFun : command -> LPAREN DECLAREFUN symbol LPAREN { sort }* RPAREN sort RPAREN
+CommandDefineFun : command -> LPAREN DEFINEFUN symbol LPAREN { sortedvar }* RPAREN sort term RPAREN
+CommandPush : command -> LPAREN PUSH NUMERAL RPAREN
+CommandPop : command -> LPAREN POP NUMERAL RPAREN
+CommandAssert : command -> LPAREN ASSERT term RPAREN
+CommandCheckSat : command -> LPAREN CHECKSAT RPAREN
+CommandGetAssert : command -> LPAREN GETASSERT RPAREN
+CommandGetProof : command -> LPAREN GETPROOF RPAREN
+CommandGetUnsatCore : command -> LPAREN GETUNSATCORE RPAREN
+CommandGetValue : command -> LPAREN GETVALUE LPAREN { term }+ RPAREN RPAREN
+CommandGetAssign : command -> LPAREN GETASSIGN RPAREN
+CommandGetOption : command -> LPAREN GETOPTION KEYWORD RPAREN
+CommandGetInfo : command -> LPAREN GETINFO infoflag RPAREN
+CommandExit : command -> LPAREN EXIT RPAREN
+
+Symbol : symbol -> SYMBOL
+SymbolWithOr : symbol -> ASCIIWOR
+
+VarBindingSymTerm : varbinding -> LPAREN symbol term RPAREN
+
+SortIdentifier : sort -> identifier
+SortIdSortMulti : sort -> LPAREN identifier { sort }+ RPAREN
+
+SortedVarSymSort : sortedvar -> LPAREN symbol sort RPAREN
+
+TermSpecConst : term -> specconstant
+TermQualIdentifier : term -> qualidentifier
+TermQualIdTerm : term -> LPAREN qualidentifier { term }+ RPAREN
+TermLetTerm : term -> LPAREN LET LPAREN { varbinding }+ RPAREN term RPAREN
+TermForAllTerm : term -> LPAREN FORALL LPAREN { sortedvar }+ RPAREN term RPAREN
+TermExistsTerm : term -> LPAREN EXISTS LPAREN { sortedvar }+ RPAREN term RPAREN
+TermExclimationPt : term -> LPAREN EXCLIMATIONPT term { attribute }+ RPAREN
+
+QualIdentifierId : qualidentifier -> identifier
+QualIdentifierAs : qualidentifier -> LPAREN AS identifier sort RPAREN
+
+IdSymbol : identifier -> symbol
+IdUnderscoreSymNum : identifier -> LPAREN UNDERSCORE symbol { NUMERAL }+ RPAREN
+
+InfoFlagKeyword : infoflag -> KEYWORD
+AnOptionAttribute : an_option -> attribute
+
+AttributeKeyword : attribute -> KEYWORD
+AttributeKeywordValue : attribute -> KEYWORD attributevalue
+AttributeValSpecConst : attributevalue -> specconstant
+AttributeValSymbol : attributevalue -> symbol
+AttributeValSexpr : attributevalue -> LPAREN { sexpr }* RPAREN
+
+SexprSpecConst : sexpr -> specconstant
+SexprSymbol : sexpr -> symbol
+SexprKeyword : sexpr -> KEYWORD
+SexprInParen : sexpr -> LPAREN { sexpr }* RPAREN
+
+SpecConstsDec : specconstant -> DECIMAL
+SpecConstNum : specconstant -> NUMERAL
+SpecConstString : specconstant -> STRINGLIT
+SpecConstsHex : specconstant -> HEXADECIMAL
+SpecConstsBinary : specconstant -> BINARY
+
+
+
+UNDERSCORE = "_"
+LPAREN = "("
+RPAREN = ")"
+AS = "as"
+LET = "let"
+FORALL = "forall"
+EXISTS = "exists"
+EXCLIMATIONPT = "!"
+SETLOGIC = "set-logic"
+SETOPTION = "set-option"
+SETINFO = "set-info"
+DECLARESORT = "declare-sort"
+DEFINESORT = "define-sort"
+DECLAREFUN = "declare-fun"
+DEFINEFUN = "define-fun"
+PUSH = "push"
+POP = "pop"
+ASSERT = "assert"
+CHECKSAT = "check-sat"
+GETASSERT = "get-assertions"
+GETPROOF = "get-proof"
+GETUNSATCORE = "get-unsat-core"
+GETVALUE = "get-value"
+GETASSIGN = "get-assignment"
+GETOPTION = "get-option"
+GETINFO = "get-info"
+EXIT = "exit"
+
+
+HEXADECIMAL = {{ '#' 'x' ['0'-'9' 'A'-'F' 'a'-'f']+ }}
+
+BINARY = {{ '#' 'b' ['0'-'1']+ }}
+
+ASCIIWOR = {{ '|' ([ '!'-'~' ' ' '\n' '\t' '\r'] # ['\\' '|'])* '|' }}
+
+KEYWORD = {{ ':' ['a'-'z' 'A'-'Z' '0'-'9' '+' '-' '/' '*' '=' '%' '?' '!' '.' '$' '_' '~' '&' '^' '<' '>' '@']+ }}
+
+SYMBOL = {{ ['a'-'z' 'A'-'Z' '+' '-' '/' '*' '=''%' '?' '!' '.' '$' '_' '~' '&' '^' '<' '>' '@'] ['a'-'z' 'A'-'Z' '0'-'9' '+' '-' '/' '*' '=''%' '?' '!' '.' '$' '_' '~' '&' '^' '<' '>' '@']* }}
+
+STRINGLIT = {{ '"' (([ '!'-'~' ' ' '\n' '\t' '\r' ] # ['\\' '"']) | ('\\' ['!'-'~' ' ' '\n' '\t' '\r'] ))* '"'}}
+
+NUMERAL = {{ ( '0' | ['1'-'9'] ['0'-'9']* ) }}
+
+DECIMAL = {{ ( '0' | ['1'-'9'] ['0'-'9']* ) '.' ['0'-'9']+}}
+
+
+
+
+
+
