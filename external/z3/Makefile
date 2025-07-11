@@ -1,8 +1,8 @@
 # Z3 C++ Parser Makefile
 
 # 编译器设置
-CC=$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-gcc
-CXX=$CONDA_PREFIX/bin/x86_64-conda-linux-gnu-g++
+CC=$(CONDA_PREFIX)/bin/x86_64-conda-linux-gnu-gcc
+CXX=$(CONDA_PREFIX)/bin/x86_64-conda-linux-gnu-g++
 CXXFLAGS = -std=c++17 -O2 -Wall -Wextra
 
 # Z3库设置
