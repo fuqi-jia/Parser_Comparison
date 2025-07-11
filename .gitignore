@@ -58,3 +58,6 @@ install_manifest.txt
 
 # log
 *.log
+
+# solvers
+z3-z3-4.15.2/
