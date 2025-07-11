@@ -209,106 +209,65 @@ ParseResult PySMTParser::parse(const std::string& filename) {
     return result;
 }
 
-// ======== ANTLRParser 实现 ========
-ParseResult ANTLRParser::parse(const std::string& filename) {
-    ParseResult result;
-    
-    // 执行ANTLR解析器
-    std::string cmd = parser_path + " " + filename + " 2>&1";
-    
-    // 记录开始时间和内存
-    size_t memory_before = PerformanceMetrics::getCurrentMemoryUsage();
-    
-    // 测量执行时间并执行命令（带超时）
-    std::string output;
-    try {
-        result.parse_time = PerformanceMetrics::measureExecutionTime([&]() {
-            output = exec(cmd); // 使用带超时的exec函数
-        });
-    } catch (const std::exception& e) {
-        result.success = false;
-        result.errors.push_back(e.what());
-        return result;
-    }
-    
-    // 计算内存使用
-    size_t memory_after = PerformanceMetrics::getCurrentMemoryUsage();
-    result.memory_usage = memory_after - memory_before;
-    
-    // 解析输出结果
-    std::istringstream iss(output);
-    std::string line;
-    bool has_errors = false;
-    
-    while (std::getline(iss, line)) {
-        if (line.find("ERROR") != std::string::npos || 
-            line.find("Exception") != std::string::npos) {
-            has_errors = true;
-            result.errors.push_back(line);
-        }
-        
-        // 尝试解析节点计数
-        if (line.find("AST节点数:") != std::string::npos) {
-            result.ast_node_count = std::stoul(line.substr(line.find(":") + 1));
-        }
-    }
-    
-    // 如果没有提供明确信息，设置默认值
-    if (result.ast_node_count == 0) {
-        size_t filesize = PerformanceMetrics::getFileSize(filename);
-        result.ast_node_count = filesize / 10;  // 粗略估计
-    }
-    
-    result.success = !has_errors;
-    return result;
-}
+
 
 // ======== JSMTLIBParser 实现 ========
 ParseResult JSMTLIBParser::parse(const std::string& filename) {
     ParseResult result;
     
-    // 执行jSMTLIB解析器
-    std::string cmd = "java -jar " + parser_path + " -parse " + filename + " 2>&1";
+    // 构建调用Java解析器的命令
+    // 使用绝对路径构建classpath，避免cd命令
+    std::filesystem::path abs_jsmtlib_path = std::filesystem::absolute(parser_path);
+    std::filesystem::path abs_filename_path = std::filesystem::absolute(filename);
     
-    // 记录开始时间和内存
-    size_t memory_before = PerformanceMetrics::getCurrentMemoryUsage();
+    std::string jsmtlib_src = abs_jsmtlib_path.string() + "/jSMTLIB-0.9.10.1/SMT/src";
+    std::string classpath = "\"" + jsmtlib_src + ":" + abs_jsmtlib_path.string() + "\"";
+    std::string cmd = "java -cp " + classpath + " jsmtlib_parser \"" + abs_filename_path.string() + "\"";
     
-    // 测量执行时间并执行命令（带超时）
+    // 调用Java解析器程序
     std::string output;
     try {
-        result.parse_time = PerformanceMetrics::measureExecutionTime([&]() {
-            output = exec(cmd); // 使用带超时的exec函数
-        });
+        output = exec(cmd);
     } catch (const std::exception& e) {
         result.success = false;
         result.errors.push_back(e.what());
         return result;
     }
     
-    // 计算内存使用
-    size_t memory_after = PerformanceMetrics::getCurrentMemoryUsage();
-    result.memory_usage = memory_after - memory_before;
-    
-    // 解析输出结果
-    std::istringstream iss(output);
-    std::string line;
-    bool has_errors = false;
-    
-    while (std::getline(iss, line)) {
-        if (line.find("ERROR") != std::string::npos || 
-            line.find("Exception") != std::string::npos) {
-            has_errors = true;
-            result.errors.push_back(line);
+    // 解析JSON输出
+    try {
+        SimpleJson::Value json = SimpleJson::Parser::parse(output);
+        
+        // 填充结果结构
+        result.success = json["success"].getBool();
+        result.parse_time = json["parse_time"].getNumber();
+        result.memory_usage = static_cast<size_t>(json["memory_usage"].getNumber());
+        result.ast_node_count = static_cast<size_t>(json["ast_node_count"].getNumber());
+        
+        // 获取错误信息
+        if (json["errors"].isArray()) {
+            const auto& errors = json["errors"].getArray();
+            for (const auto& err : errors) {
+                result.errors.push_back(err.getString());
+            }
         }
-    }
-    
-    result.success = !has_errors;
-    
-    // jSMTLIB没有直接提供这些信息，设置为默认值或估计值
-    if (result.success) {
-        // 估计AST节点数基于文件大小
-        size_t filesize = PerformanceMetrics::getFileSize(filename);
-        result.ast_node_count = filesize / 10;  // 粗略估计
+        
+        // 获取解析方法信息（如果有）
+        try {
+            if (json.isObject()) {
+                const auto& obj = json.getObject();
+                if (obj.find("parsing_method") != obj.end()) {
+                    result.errors.push_back("解析方法: " + obj.at("parsing_method").getString());
+                }
+            }
+        } catch (...) {
+            // 忽略解析方法获取失败
+        }
+        
+    } catch (const std::exception& e) {
+        result.success = false;
+        result.errors.push_back(std::string("解析JSON输出失败: ") + e.what());
+        result.errors.push_back("原始输出: " + output);
     }
     
     return result;
@@ -327,12 +286,7 @@ bool ParserManager::initializeParsers() {
             std::cerr << "警告: 无法初始化pySMT解析器: " << e.what() << std::endl;
         }
         
-        // 尝试添加ANTLR解析器
-        try {
-            addParser(std::make_shared<ANTLRParser>());
-        } catch (const std::exception& e) {
-            std::cerr << "警告: 无法初始化ANTLR解析器: " << e.what() << std::endl;
-        }
+
         
         // 尝试添加jSMTLIB解析器
         try {
@@ -340,6 +294,17 @@ bool ParserManager::initializeParsers() {
         } catch (const std::exception& e) {
             std::cerr << "警告: 无法初始化jSMTLIB解析器: " << e.what() << std::endl;
         }
+        
+        // 尝试添加Z3解析器
+        try {
+            addParser(std::make_shared<Z3Parser>());
+        } catch (const std::exception& e) {
+            std::cerr << "警告: 无法初始化Z3解析器: " << e.what() << std::endl;
+        }
+        
+
+        
+
         
         return !parsers.empty();
     } catch (const std::exception& e) {
@@ -968,5 +933,65 @@ void ParserManager::generateSingleParserReport(
     
     std::cout << "生成报告: " << outputFilename << std::endl;
 }
+
+// ======== Z3Parser 实现 ========
+ParseResult Z3Parser::parse(const std::string& filename) {
+    ParseResult result;
+    
+    // 构建调用z3_parser的命令
+    std::string cmd = parser_path + " \"" + filename + "\"";
+    
+    // 调用外部z3_parser程序
+    std::string output;
+    try {
+        output = exec(cmd);
+    } catch (const std::exception& e) {
+        result.success = false;
+        result.errors.push_back(e.what());
+        return result;
+    }
+    
+    // 解析JSON输出
+    try {
+        SimpleJson::Value json = SimpleJson::Parser::parse(output);
+        
+        // 填充结果结构
+        result.success = json["success"].getBool();
+        result.parse_time = json["parse_time"].getNumber();
+        result.memory_usage = static_cast<size_t>(json["memory_usage"].getNumber());
+        result.ast_node_count = static_cast<size_t>(json["ast_node_count"].getNumber());
+        
+        // 获取错误信息
+        if (json["errors"].isArray()) {
+            const auto& errors = json["errors"].getArray();
+            for (const auto& err : errors) {
+                result.errors.push_back(err.getString());
+            }
+        }
+        
+        // 获取解析方法信息（如果有）
+        try {
+            if (json.isObject()) {
+                const auto& obj = json.getObject();
+                if (obj.find("parsing_method") != obj.end()) {
+                    result.errors.push_back("解析方法: " + obj.at("parsing_method").getString());
+                }
+            }
+        } catch (...) {
+            // 忽略解析方法获取失败
+        }
+        
+    } catch (const std::exception& e) {
+        result.success = false;
+        result.errors.push_back(std::string("解析JSON输出失败: ") + e.what());
+        result.errors.push_back("原始输出: " + output);
+    }
+    
+    return result;
+}
+
+
+
+
 
 } // namespace SMTComparison 

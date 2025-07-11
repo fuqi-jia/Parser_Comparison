@@ -278,54 +278,8 @@ ParseResult PySMTParser::parse(const std::string& filename) {
     return result;
 }
 
-// ======== ANTLRParser实现 ========
-ParseResult ANTLRParser::parse(const std::string& filename) {
-    ParseResult result;
-    
-    // 获取初始内存使用
-    size_t initial_memory = PerformanceMetrics::getCurrentMemoryUsage();
-    
-    // 准备Java命令
-    std::string cmd = "java -jar " + parser_path + " " + filename + " 2>&1";
-    
-    // 使用安全执行
-    bool success = false;
-    try {
-        double parse_time = PerformanceMetrics::measureExecutionTime([&]() {
-            success = safeParseFile([&]() {
-                std::string output = exec(cmd);
-                
-                // 解析输出结果
-                if (output.find("SUCCESS") != std::string::npos) {
-                    // 尝试解析节点数量
-                    size_t pos = output.find("Node count:");
-                    if (pos != std::string::npos) {
-                        std::string count_str = output.substr(pos + 11);
-                        try {
-                            result.ast_node_count = std::stoull(count_str);
-                        } catch (...) {
-                            result.ast_node_count = 0;
-                        }
-                    }
-                    return true;
-                } else {
-                    result.errors.push_back(output);
-                    return false;
-                }
-            });
-        });
-        
-        result.success = success;
-        result.parse_time = parse_time;
-    } catch (const std::exception& e) {
-        result.success = false;
-        result.errors.push_back(std::string("解析器异常: ") + e.what());
-    }
-    
-    result.memory_usage = PerformanceMetrics::getCurrentMemoryUsage() - initial_memory;
-    
-    return result;
-}
+
+
 
 // ======== JSMTLIBParser实现 ========
 ParseResult JSMTLIBParser::parse(const std::string& filename) {

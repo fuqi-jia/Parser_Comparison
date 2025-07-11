@@ -144,7 +144,7 @@ public:
             
             return total_nodes;
         } catch (...) {
-            return 1;
+            return 0;
         }
     }
 };
@@ -193,7 +193,7 @@ public:
             }
             file.close();
             
-            // 方法1: 尝试使用parse_smt2_file
+            // 方法1: 尝试使用parse_file
             bool parsed = false;
             try {
                 z3::expr_vector assertions = ctx.parse_file(filename.c_str());
@@ -213,7 +213,7 @@ public:
                 parsed = true;
                 
             } catch (const z3::exception& e) {
-                // 方法2: 尝试使用parse_smt2_string
+                // 方法2: 尝试使用parse_string
                 try {
                     z3::expr_vector assertions = ctx.parse_string(content.c_str());
                     
@@ -232,21 +232,10 @@ public:
                     parsed = true;
                     
                 } catch (const z3::exception& e2) {
-                    // 方法3: 启发式文本分析
-                    try {
-                        result.ast_node_count = heuristic_count_nodes(content);
-                        result.parsing_method = "heuristic_text_analysis";
-                        result.errors.push_back("Z3解析失败，使用启发式方法: " + std::string(e.msg()));
-                        result.errors.push_back("Z3字符串解析也失败: " + std::string(e2.msg()));
-                        parsed = true;
-                        
-                    } catch (const std::exception& e3) {
-                        result.errors.push_back("所有解析方法都失败");
-                        result.errors.push_back("Z3文件解析失败: " + std::string(e.msg()));
-                        result.errors.push_back("Z3字符串解析失败: " + std::string(e2.msg()));
-                        result.errors.push_back("启发式解析失败: " + std::string(e3.what()));
-                        return result;
-                    }
+                    // 如果两种方法都失败，记录错误并返回
+                    result.errors.push_back("Z3文件解析失败: " + std::string(e.msg()));
+                    result.errors.push_back("Z3字符串解析失败: " + std::string(e2.msg()));
+                    return result;
                 }
             }
             
@@ -256,12 +245,6 @@ public:
                 if (result.parsing_method.empty()) {
                     result.parsing_method = "z3_solver_assertions";
                 }
-            }
-            
-            // 确保至少有1个节点
-            if (result.ast_node_count == 0) {
-                result.ast_node_count = std::max(static_cast<size_t>(1), 
-                                                count_parentheses(content));
             }
             
             result.success = true;
@@ -283,78 +266,6 @@ public:
         result.memory_usage = memory_monitor.get_memory_diff();
         
         return result;
-    }
-
-private:
-    size_t heuristic_count_nodes(const std::string& content) {
-        // 启发式节点计数：基于文本分析
-        size_t paren_count = count_parentheses(content);
-        size_t word_count = count_words(content);
-        size_t number_count = count_numbers(content);
-        
-        // 估算总节点数
-        return paren_count + word_count + number_count;
-    }
-    
-    size_t count_parentheses(const std::string& content) {
-        size_t count = 0;
-        bool in_string = false;
-        bool escape_next = false;
-        
-        for (char c : content) {
-            if (escape_next) {
-                escape_next = false;
-                continue;
-            }
-            
-            if (c == '\\') {
-                escape_next = true;
-                continue;
-            }
-            
-            if (c == '"') {
-                in_string = !in_string;
-                continue;
-            }
-            
-            if (!in_string && c == '(') {
-                count++;
-            }
-        }
-        
-        return count;
-    }
-    
-    size_t count_words(const std::string& content) {
-        std::istringstream iss(content);
-        std::string word;
-        size_t count = 0;
-        
-        while (iss >> word) {
-            // 排除注释和某些符号
-            if (!word.empty() && word[0] != ';' && 
-                word != "(" && word != ")") {
-                count++;
-            }
-        }
-        
-        return count;
-    }
-    
-    size_t count_numbers(const std::string& content) {
-        size_t count = 0;
-        std::istringstream iss(content);
-        std::string word;
-        
-        while (iss >> word) {
-            // 简单的数字检测
-            if (!word.empty() && (std::isdigit(word[0]) || 
-                (word[0] == '-' && word.length() > 1 && std::isdigit(word[1])))) {
-                count++;
-            }
-        }
-        
-        return count;
     }
 };
 

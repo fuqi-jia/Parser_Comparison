@@ -17,6 +17,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <signal.h>
+#include "simple_json.h"
 
 // 添加缺少的头文件
 #ifdef _WIN32
@@ -286,35 +287,41 @@ public:
     ParseResult parse(const std::string& filename) override;
 };
 
-// ======== ANTLR解析器实现 ========
-class ANTLRParser : public ExternalParser {
+
+
+// ======== jSMTLIB解析器实现 ========
+class JSMTLIBParser : public ExternalParser {
 public:
-    ANTLRParser(const std::string& path = "../external/antlr/SMTLIBParser") 
+    JSMTLIBParser(const std::string& jsmtlib_dir = "external/jsmtlib") 
         : ExternalParser(
-            path, 
-            "antlr", 
-            "2.6", 
+            jsmtlib_dir, 
+            "jsmtlib", 
+            "0.9.10.1", 
             "Java", 
-            {"SMT-LIB 2.6", "语法验证"}
+            {"SMT-LIB 2.6", "AST节点计数", "Java解析器"}
         ) {}
     
     ParseResult parse(const std::string& filename) override;
 };
 
-// ======== jSMTLIB解析器实现 ========
-class JSMTLIBParser : public ExternalParser {
+// ======== Z3解析器实现 ========
+class Z3Parser : public ExternalParser {
 public:
-    JSMTLIBParser(const std::string& path = "../external/jsmtlib/jsmtlib.jar") 
+    Z3Parser(const std::string& path = "external/z3/z3_parser") 
         : ExternalParser(
             path, 
-            "jsmtlib", 
-            "2.6", 
-            "Java", 
-            {"SMT-LIB 2.6", "类型检查", "翻译功能"}
+            "z3", 
+            "4.15.2", 
+            "C++", 
+            {"SMT-LIB 2.6", "C++ Z3 API", "AST节点计数"}
         ) {}
     
     ParseResult parse(const std::string& filename) override;
 };
+
+
+
+
 
 // ======== 解析器管理器 ========
 class ParserManager {

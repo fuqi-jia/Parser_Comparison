@@ -37,12 +37,7 @@ public:
                 std::cerr << "警告: 无法初始化pySMT解析器: " << e.what() << std::endl;
             }
             
-            // 尝试添加ANTLR解析器
-            try {
-                addParser(std::make_shared<ANTLRParser>());
-            } catch (const std::exception& e) {
-                std::cerr << "警告: 无法初始化ANTLR解析器: " << e.what() << std::endl;
-            }
+
             
             // 尝试添加jSMTLIB解析器
             try {
@@ -51,12 +46,23 @@ public:
                 std::cerr << "警告: 无法初始化jSMTLIB解析器: " << e.what() << std::endl;
             }
             
-            // 尝试添加SWI-Prolog解析器
+            // 尝试添加Z3解析器
             try {
-                addParser(std::make_shared<SWIPrologParser>());
+                addParser(std::make_shared<Z3Parser>());
             } catch (const std::exception& e) {
-                std::cerr << "警告: 无法初始化SWI-Prolog解析器: " << e.what() << std::endl;
+                std::cerr << "警告: 无法初始化Z3解析器: " << e.what() << std::endl;
             }
+            
+
+            
+            // 尝试添加SMT-Switch解析器
+            try {
+                addParser(std::make_shared<SMTSwitchParser>());
+            } catch (const std::exception& e) {
+                std::cerr << "警告: 无法初始化SMT-Switch解析器: " << e.what() << std::endl;
+            }
+            
+
             
             return !parsers.empty();
         } catch (const std::exception& e) {

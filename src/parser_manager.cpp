@@ -18,11 +18,21 @@ bool ParserManager::initializeParsers() {
             std::cerr << "无法初始化pySMT解析器: " << e.what() << std::endl;
         }
         
-        // 添加ANTLR解析器
-        addParser(std::make_shared<ANTLRParser>());
+
         
         // 添加jSMTLIB解析器
         addParser(std::make_shared<JSMTLIBParser>());
+        
+        // 尝试添加Z3解析器
+        try {
+            addParser(std::make_shared<Z3Parser>());
+        } catch (const std::exception& e) {
+            std::cerr << "警告: 无法初始化Z3解析器: " << e.what() << std::endl;
+        }
+        
+
+        
+
     } catch (const std::exception& e) {
         std::cerr << "初始化解析器时出错: " << e.what() << std::endl;
         success = false;
