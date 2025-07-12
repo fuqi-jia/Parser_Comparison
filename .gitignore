@@ -60,3 +60,6 @@ install_manifest.txt
 
 # solvers
 z3-z3-4.15.2/
+
+# results
+results/
