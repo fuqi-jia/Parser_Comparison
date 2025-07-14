@@ -16,11 +16,16 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # 配置
-git clone https://github.com/julianthome/smtlibv2-grammar.git
+# git clone https://github.com/julianthome/smtlibv2-grammar.git
+wget https://github.com/julianthome/smtlibv2-grammar/archive/refs/heads/master.zip
+unzip master.zip
+mv smtlibv2-grammar-master smtlibv2-grammar
+rm master.zip
+
 ANTLR4_VERSION="4.13.2"
 ANTLR4_JAR="antlr4-${ANTLR4_VERSION}/antlr-${ANTLR4_VERSION}-complete.jar"
 ANTLR4_URL="https://www.antlr.org/download/antlr-${ANTLR4_VERSION}-complete.jar"
-GRAMMAR_FILE="smtlibv2-grammar-master/src/main/resources/SMTLIBv2.g4"
+GRAMMAR_FILE="smtlibv2-grammar/src/main/resources/SMTLIBv2.g4"
 
 # 辅助函数
 print_step() {
