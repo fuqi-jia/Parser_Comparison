@@ -30,7 +30,7 @@ void printUsage(const char* progName) {
     std::cout << "  " << progName << " benchmark --parser native --file test1.smt2 --timeout 30\n";
     std::cout << "  " << progName << " batch --dir ../benchmarks --timeout 180\n";
     std::cout << "  " << progName << " batch --parser pysmt --dir test --output my_results.csv --timeout 300\n";
-    std::cout << "\n可用解析器名称: native, pysmt, jsmtlib, z3\n";
+    std::cout << "\n可用解析器名称: native, pysmt, jsmtlib, z3, antlr4\n";
 }
 
 // 判断文件是否为SMT文件（基于扩展名）

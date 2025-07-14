@@ -302,6 +302,12 @@ bool ParserManager::initializeParsers() {
             std::cerr << "警告: 无法初始化Z3解析器: " << e.what() << std::endl;
         }
         
+        // 尝试添加ANTLR4解析器
+        try {
+            addParser(std::make_shared<ANTLR4Parser>());
+        } catch (const std::exception& e) {
+            std::cerr << "警告: 无法初始化ANTLR4解析器: " << e.what() << std::endl;
+        }
 
         
 
@@ -942,6 +948,69 @@ ParseResult Z3Parser::parse(const std::string& filename) {
     std::string cmd = parser_path + " \"" + filename + "\"";
     
     // 调用外部z3_parser程序
+    std::string output;
+    try {
+        output = exec(cmd);
+    } catch (const std::exception& e) {
+        result.success = false;
+        result.errors.push_back(e.what());
+        return result;
+    }
+    
+    // 解析JSON输出
+    try {
+        SimpleJson::Value json = SimpleJson::Parser::parse(output);
+        
+        // 填充结果结构
+        result.success = json["success"].getBool();
+        result.parse_time = json["parse_time"].getNumber();
+        result.memory_usage = static_cast<size_t>(json["memory_usage"].getNumber());
+        result.ast_node_count = static_cast<size_t>(json["ast_node_count"].getNumber());
+        
+        // 获取错误信息
+        if (json["errors"].isArray()) {
+            const auto& errors = json["errors"].getArray();
+            for (const auto& err : errors) {
+                result.errors.push_back(err.getString());
+            }
+        }
+        
+        // 获取解析方法信息（如果有）
+        try {
+            if (json.isObject()) {
+                const auto& obj = json.getObject();
+                if (obj.find("parsing_method") != obj.end()) {
+                    result.errors.push_back("解析方法: " + obj.at("parsing_method").getString());
+                }
+            }
+        } catch (...) {
+            // 忽略解析方法获取失败
+        }
+        
+    } catch (const std::exception& e) {
+        result.success = false;
+        result.errors.push_back(std::string("解析JSON输出失败: ") + e.what());
+        result.errors.push_back("原始输出: " + output);
+    }
+    
+    return result;
+}
+
+// ======== ANTLR4Parser 实现 ========
+ParseResult ANTLR4Parser::parse(const std::string& filename) {
+    ParseResult result;
+    
+    // 构建调用Java ANTLR4解析器的命令
+    // 使用绝对路径构建classpath，避免cd命令
+    std::filesystem::path abs_antlr4_path = std::filesystem::absolute(parser_path);
+    std::filesystem::path abs_filename_path = std::filesystem::absolute(filename);
+    
+    // 构建classpath，包含ANTLR4解析器的所有必要路径和运行时库
+    std::string antlr_jar = abs_antlr4_path.string() + "/antlr-4.13.2-complete.jar";
+    std::string classpath = "\"" + abs_antlr4_path.string() + ":" + antlr_jar + "\"";
+    std::string cmd = "java -cp " + classpath + " antlr4_parser \"" + abs_filename_path.string() + "\"";
+    
+    // 调用Java ANTLR4解析器程序
     std::string output;
     try {
         output = exec(cmd);

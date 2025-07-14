@@ -319,6 +319,21 @@ public:
     ParseResult parse(const std::string& filename) override;
 };
 
+// ======== ANTLR4解析器实现 ========
+class ANTLR4Parser : public ExternalParser {
+public:
+    ANTLR4Parser(const std::string& antlr4_dir = "external/antlr4_parser") 
+        : ExternalParser(
+            antlr4_dir, 
+            "antlr4", 
+            "4.13.1", 
+            "Java", 
+            {"SMT-LIB 2.6", "ANTLR4语法", "AST节点计数", "Java实现"}
+        ) {}
+    
+    ParseResult parse(const std::string& filename) override;
+};
+
 
 
 
