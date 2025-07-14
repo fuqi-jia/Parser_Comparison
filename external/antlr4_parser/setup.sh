@@ -16,6 +16,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # 配置
+git clone https://github.com/julianthome/smtlibv2-grammar.git
 ANTLR4_VERSION="4.13.2"
 ANTLR4_JAR="antlr4-${ANTLR4_VERSION}/antlr-${ANTLR4_VERSION}-complete.jar"
 ANTLR4_URL="https://www.antlr.org/download/antlr-${ANTLR4_VERSION}-complete.jar"
