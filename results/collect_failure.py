@@ -219,6 +219,8 @@ def collect_failure_patterns(directory, output_file="failure_patterns.txt", patt
         print(f"错误: 生成报告文件时出错: {e}")
         return False
 
+server_path = "../benchmarks/benchmarks"
+
 def copy_failed_files_from_log(log_file, target_dir, base_source_dir=None):
     """
     从native_error.log中提取失败文件并复制到指定目录
@@ -274,7 +276,7 @@ def copy_failed_files_from_log(log_file, target_dir, base_source_dir=None):
                     if '../benchmarks/' in file_path:
                         # 提取benchmarks之后的路径
                         benchmark_part = file_path.split('../benchmarks/')[-1]
-                        new_path = f"../benchmarks/benchmarks/{benchmark_part}"
+                        new_path = f"{server_path}/{benchmark_part}"
                         
                         failed_files.append({
                             'original_path': file_path,
