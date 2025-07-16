@@ -115,39 +115,45 @@ public:
     }
 };
 
-// AST节点计数器
 class ASTNodeCounter {
 public:
     static size_t count_nodes(const z3::expr& expr) {
-        try {
-            size_t count = 1; // 当前节点
-
-            // 递归计算子表达式的节点数
-            for (unsigned i = 0; i < expr.num_args(); ++i) {
-                count += count_nodes(expr.arg(i));
-            }
-
-            return count;
-        } catch (...) {
-            return 1; // 出错时返回最小值
-        }
+        std::unordered_set<Z3_ast> visited;
+        return count_nodes_impl(expr, visited);
     }
 
     static size_t count_assertions(const z3::solver& solver) {
         try {
             size_t total_nodes = 0;
             z3::expr_vector assertions = solver.assertions();
-            
+            std::unordered_set<Z3_ast> visited;
+
             for (unsigned i = 0; i < assertions.size(); ++i) {
-                total_nodes += count_nodes(assertions[i]);
+                total_nodes += count_nodes_impl(assertions[i], visited);
             }
-            
+
             return total_nodes;
         } catch (...) {
             return 0;
         }
     }
+
+private:
+    static size_t count_nodes_impl(const z3::expr& expr, std::unordered_set<Z3_ast>& visited) {
+        Z3_ast raw = expr;
+        if (visited.count(raw)) return 0;
+
+        visited.insert(raw);
+        size_t count = 1;
+
+        for (unsigned i = 0; i < expr.num_args(); ++i) {
+            count += count_nodes_impl(expr.arg(i), visited);
+        }
+
+        return count;
+    }
 };
+    
 
 // SMT解析器结果结构
 struct ParseResult {

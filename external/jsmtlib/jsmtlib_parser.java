@@ -92,65 +92,63 @@ class MemoryMonitor {
         return Math.max(0, current - initialMemory);
     }
 }
+public class ASTNodeCounter {
 
-/**
- * AST节点计数器
- */
-class ASTNodeCounter {
-    
     public static long countNodes(IExpr expr) {
+        return countNodes(expr, new HashSet<>());
+    }
+
+    private static long countNodes(IExpr expr, Set<IExpr> visited) {
         if (expr == null) return 0;
-        
+        if (visited.contains(expr)) return 0;
+        visited.add(expr);
+
         long count = 1; // 当前节点
-        
+
         try {
             if (expr instanceof IFcnExpr) {
-                IFcnExpr fcn = (IFcnExpr) expr;
-                for (IExpr arg : fcn.args()) {
-                    count += countNodes(arg);
+                for (IExpr arg : ((IFcnExpr) expr).args()) {
+                    count += countNodes(arg, visited);
                 }
             } else if (expr instanceof ILet) {
                 ILet let = (ILet) expr;
-                count += countNodes(let.expr());
+                count += countNodes(let.expr(), visited);
                 for (IBinding binding : let.bindings()) {
-                    count += countNodes(binding.expr());
+                    count += countNodes(binding.expr(), visited);
                 }
             } else if (expr instanceof IForall) {
-                IForall forall = (IForall) expr;
-                count += countNodes(forall.expr());
+                count += countNodes(((IForall) expr).expr(), visited);
             } else if (expr instanceof IExists) {
-                IExists exists = (IExists) expr;
-                count += countNodes(exists.expr());
+                count += countNodes(((IExists) expr).expr(), visited);
             } else if (expr instanceof IAttributedExpr) {
-                IAttributedExpr attr = (IAttributedExpr) expr;
-                count += countNodes(attr.expr());
+                count += countNodes(((IAttributedExpr) expr).expr(), visited);
             }
-            // 其他类型如字面量、符号等不需要递归
+            // 其他节点类型：符号、字面量，不需要递归
         } catch (Exception e) {
-            // 出错时只计算当前节点
+            // 忽略异常，返回当前已统计的 count
         }
-        
+
         return count;
     }
 
     public static long countCommandNodes(ICommand command) {
         if (command == null) return 0;
-        
-        long count = 1; // 命令本身
-        
+
+        long count = 1;
+
         try {
             if (command instanceof org.smtlib.command.C_assert) {
-                org.smtlib.command.C_assert assertCmd = (org.smtlib.command.C_assert) command;
-                count += countNodes(assertCmd.expr());
+                IExpr expr = ((org.smtlib.command.C_assert) command).expr();
+                count += countNodes(expr);
             }
-            // 可以添加更多命令类型的处理
         } catch (Exception e) {
-            // 出错时只计算命令本身
+            // 忽略异常
         }
-        
+
         return count;
     }
 }
+
 
 /**
  * 解析结果结构

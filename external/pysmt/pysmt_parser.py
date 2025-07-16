@@ -35,25 +35,27 @@ def get_memory_usage():
     except:
         return 0
 
-def count_formula_nodes(formula):
-    """递归计算公式的节点数"""
-    try:
-        if formula is None:
-            return 0
-        
-        # 对于原子公式（变量、常数等），返回1
-        if hasattr(formula, 'is_symbol') and (formula.is_symbol() or formula.is_constant()):
-            return 1
-        
-        # 对于复合公式，递归计算子公式的节点数
-        count = 1  # 当前节点
-        if hasattr(formula, 'args') and formula.args():
-            for arg in formula.args():
-                count += count_formula_nodes(arg)
-        
-        return count
-    except:
-        return 1
+
+def count_formula_nodes(formula, visited=None):
+    """递归计算公式的唯一节点数（避免重复子树）"""
+    if formula is None:
+        return 0
+
+    if visited is None:
+        visited = set()
+
+    node_id = formula.node_id()
+    if node_id in visited:
+        return 0  # 已访问过，避免重复计数
+
+    visited.add(node_id)
+    count = 1  # 当前节点本身
+
+    for arg in formula.args():
+        count += count_formula_nodes(arg, visited)
+
+    return count
+
 
 def parse_smt_file(filename):
     """解析SMT文件并返回结果"""
