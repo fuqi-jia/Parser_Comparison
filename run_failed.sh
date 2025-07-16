@@ -6,9 +6,13 @@
 
 # 配置
 PARSER_WRAPPER="build/smt_parser_wrapper"
-FAILED_FILES_DIR="failed_files"
+FAILED_FILES_DIR=$1
 OUTPUT_FILE="failed_files_test_output.log"
 TIMEOUT_SECONDS=3
+
+if [ -z "$1" ]; then
+    FAILED_FILES_DIR="failed_files"
+fi
 
 # 创建输出文件
 echo "========================================" > "$OUTPUT_FILE"

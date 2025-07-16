@@ -63,6 +63,7 @@ z3-z3-4.15.2/
 
 # results
 results/
+results_failed/
 
 # failed files
 failed_files/
