@@ -263,10 +263,32 @@ def copy_failed_files_from_log(log_file, target_dir, base_source_dir=None):
                 line = line.strip()
                 
                 # 查找包含文件路径的行
-                if line.startswith("内容: ") and line.endswith("失败"):
+                if (line.startswith("内容: ") and line.endswith("失败")):
                     # 提取文件路径（逗号前的部分）
                     content = line[4:]  # 去掉"内容: "前缀
                     file_path = content.split(',')[0]  # 取第一个逗号前的部分
+                    
+                    # 转换路径格式
+                    # 从: /pub/data/jiafq/iscas/Parser_Comparison/../benchmarks/part8/non-incremental/QF_BV/mcm/186.smt2
+                    # 到: ../../benchmarks/benchmarks/part8/non-incremental/QF_BV/mcm/186.smt2
+                    
+                    # 查找benchmarks部分
+                    if '../benchmarks/' in file_path:
+                        # 提取benchmarks之后的路径
+                        benchmark_part = file_path.split('../benchmarks/')[-1]
+                        new_path = f"{server_path}/{benchmark_part}"
+                        
+                        failed_files.append({
+                            'original_path': file_path,
+                            'new_path': new_path,
+                            'line_number': line_num,
+                            'content': line
+                        })
+                        
+                        print(f"发现失败文件: {benchmark_part}")
+
+                elif ("/pub/data/jiafq/iscas/Parser_Comparison/" in line):
+                    file_path = line.split(',')[0]  # 取第一个逗号前的部分
                     
                     # 转换路径格式
                     # 从: /pub/data/jiafq/iscas/Parser_Comparison/../benchmarks/part8/non-incremental/QF_BV/mcm/186.smt2
