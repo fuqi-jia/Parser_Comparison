@@ -92,7 +92,7 @@ class MemoryMonitor {
         return Math.max(0, current - initialMemory);
     }
 }
-public class ASTNodeCounter {
+class ASTNodeCounter {
 
     public static long countNodes(IExpr expr) {
         return countNodes(expr, new HashSet<>());
