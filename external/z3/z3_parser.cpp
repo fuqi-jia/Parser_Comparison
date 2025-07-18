@@ -130,7 +130,6 @@ public:
             std::unordered_set<Z3_ast> visited;
 
             for (unsigned i = 0; i < assertions.size(); ++i) {
-                std::cout << "assertions[i]: " << assertions[i] << std::endl;
                 total_nodes += count_nodes_impl(assertions[i], visited);
             }
 
@@ -143,7 +142,6 @@ public:
 private:
     static size_t count_nodes_impl(const z3::expr& expr, std::unordered_set<Z3_ast>& visited) {
         Z3_ast raw = expr;
-        std::cout << "raw: " << raw << std::endl;
         if (visited.count(raw)) return 0;
 
         visited.insert(raw);
