@@ -94,38 +94,43 @@ class MemoryMonitor {
 }
 class ASTNodeCounter {
 
-    public static long countNodes(IExpr expr) {
-        return countNodes(expr, new HashSet<>());
-    }
+    public static long countNodes(IExpr root) {
+        if (root == null) return 0;
 
-    private static long countNodes(IExpr expr, Set<IExpr> visited) {
-        if (expr == null) return 0;
-        if (visited.contains(expr)) return 0;
-        visited.add(expr);
+        long count = 0;
+        Set<IExpr> visited = new HashSet<>();
+        Deque<IExpr> stack = new ArrayDeque<>();
+        stack.push(root);
 
-        long count = 1; // 当前节点
+        while (!stack.isEmpty()) {
+            IExpr expr = stack.pop();
+            if (expr == null || visited.contains(expr)) continue;
 
-        try {
-            if (expr instanceof IFcnExpr) {
-                for (IExpr arg : ((IFcnExpr) expr).args()) {
-                    count += countNodes(arg, visited);
+            visited.add(expr);
+            count++; // 计数当前节点
+
+            try {
+                if (expr instanceof IFcnExpr) {
+                    for (IExpr arg : ((IFcnExpr) expr).args()) {
+                        stack.push(arg);
+                    }
+                } else if (expr instanceof ILet) {
+                    ILet let = (ILet) expr;
+                    stack.push(let.expr());
+                    for (IBinding binding : let.bindings()) {
+                        stack.push(binding.expr());
+                    }
+                } else if (expr instanceof IForall) {
+                    stack.push(((IForall) expr).expr());
+                } else if (expr instanceof IExists) {
+                    stack.push(((IExists) expr).expr());
+                } else if (expr instanceof IAttributedExpr) {
+                    stack.push(((IAttributedExpr) expr).expr());
                 }
-            } else if (expr instanceof ILet) {
-                ILet let = (ILet) expr;
-                count += countNodes(let.expr(), visited);
-                for (IBinding binding : let.bindings()) {
-                    count += countNodes(binding.expr(), visited);
-                }
-            } else if (expr instanceof IForall) {
-                count += countNodes(((IForall) expr).expr(), visited);
-            } else if (expr instanceof IExists) {
-                count += countNodes(((IExists) expr).expr(), visited);
-            } else if (expr instanceof IAttributedExpr) {
-                count += countNodes(((IAttributedExpr) expr).expr(), visited);
+                // 其他节点类型无需继续展开
+            } catch (Exception e) {
+                // 忽略异常，继续处理其他节点
             }
-            // 其他节点类型：符号、字面量，不需要递归
-        } catch (Exception e) {
-            // 忽略异常，返回当前已统计的 count
         }
 
         return count;

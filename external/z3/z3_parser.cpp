@@ -140,15 +140,25 @@ public:
     }
 
 private:
-    static size_t count_nodes_impl(const z3::expr& expr, std::unordered_set<Z3_ast>& visited) {
-        Z3_ast raw = expr;
-        if (visited.count(raw)) return 0;
+    static size_t count_nodes_impl(const z3::expr& root, std::unordered_set<Z3_ast>& visited) {
+        size_t count = 0;
+        std::vector<z3::expr> stack;
+        stack.push_back(root);
 
-        visited.insert(raw);
-        size_t count = 1;
+        while (!stack.empty()) {
+            z3::expr current = stack.back();
+            stack.pop_back();
 
-        for (unsigned i = 0; i < expr.num_args(); ++i) {
-            count += count_nodes_impl(expr.arg(i), visited);
+            Z3_ast raw = current;
+            if (visited.count(raw)) {
+                continue;
+            }
+            visited.insert(raw);
+            ++count;
+
+            for (unsigned i = 0; i < current.num_args(); ++i) {
+                stack.push_back(current.arg(i));
+            }
         }
 
         return count;

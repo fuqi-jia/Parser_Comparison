@@ -36,23 +36,34 @@ def get_memory_usage():
         return 0
 
 
-def count_formula_nodes(formula, visited=None):
-    """递归计算公式的唯一节点数（避免重复子树）"""
+def count_formula_nodes(formula):
+    """迭代计算公式的唯一节点数（避免重复子树）"""
     if formula is None:
         return 0
 
-    if visited is None:
-        visited = set()
+    visited = set()
+    stack = [formula]
+    count = 0
 
-    node_id = formula.node_id()
-    if node_id in visited:
-        return 0  # 已访问过，避免重复计数
+    while stack:
+        node = stack.pop()
+        if node is None:
+            continue
 
-    visited.add(node_id)
-    count = 1  # 当前节点本身
+        node_id = node.node_id()
+        if node_id in visited:
+            continue  # 已访问过，避免重复计数
 
-    for arg in formula.args():
-        count += count_formula_nodes(arg, visited)
+        visited.add(node_id)
+        count += 1  # 当前节点本身
+
+        # 将子节点加入栈中
+        try:
+            for arg in node.args():
+                stack.append(arg)
+        except Exception:
+            # 某些节点可能不支持 args()，忽略即可
+            pass
 
     return count
 
