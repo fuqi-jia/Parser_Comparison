@@ -68,6 +68,7 @@ old_results/
 
 # failed files
 failed_files/
+fast_failed_files/
 
 # test
 test/*

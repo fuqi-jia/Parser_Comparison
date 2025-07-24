@@ -219,7 +219,7 @@ def collect_failure_patterns(directory, output_file="failure_patterns.txt", patt
         print(f"错误: 生成报告文件时出错: {e}")
         return False
 
-server_path = "../benchmarks/benchmarks"
+server_path = "../benchmarks"
 
 def copy_failed_files_from_log(log_file, target_dir, base_source_dir=None):
     """
