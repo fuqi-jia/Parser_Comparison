@@ -68,3 +68,6 @@ old_results/
 
 # failed files
 failed_files/
+
+# test
+test/*
