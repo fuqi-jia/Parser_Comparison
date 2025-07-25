@@ -189,7 +189,7 @@ bool parseFileInChildProcess(const std::string& filename, ParseResult& result) {
             // 尝试解析文件
             try {
                 SMTParser::ParserPtr parser = SMTParser::newParser();
-                // parser->setOption("keep_let", false);
+                parser->setOption("keep_let", false);
                 success = parser->parse(filename);
                 
                 if (success) {
