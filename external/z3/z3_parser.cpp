@@ -155,6 +155,7 @@ private:
             }
             visited.insert(raw);
             ++count;
+            // std::cout << "node: " << current.to_string() << std::endl;
 
             for (unsigned i = 0; i < current.num_args(); ++i) {
                 stack.push_back(current.arg(i));
