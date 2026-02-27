@@ -1,5 +1,6 @@
 #include "smt_parser_comparison.h"
 #include "simple_json.h"
+#include "process_runner.h"
 #include <iostream>
 #include <fstream>
 #include <chrono>
@@ -42,6 +43,48 @@ std::string exec(const std::string& cmd, int timeout_seconds = -1) {
     return result;
 }
 
+// 使用 ProcessRunner 执行命令，返回完整结果（含 peak_rss、stderr、exit_code）
+static ProcessRunResult runExternalCommand(const std::string& cmd) {
+    return ProcessRunner::run(cmd, g_timeout_seconds);
+}
+
+static ResultCode resultCodeFromStderr(const std::string& stderr_out) {
+    std::string lower;
+    lower.reserve(stderr_out.size());
+    for (char c : stderr_out) lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    if (lower.find("unsupported") != std::string::npos || lower.find("not supported") != std::string::npos)
+        return ResultCode::UNSUPPORTED;
+    if (lower.find("type") != std::string::npos || lower.find("sort") != std::string::npos)
+        return ResultCode::TYPE_ERROR;
+    if (lower.find("parse error") != std::string::npos || lower.find("syntax") != std::string::npos)
+        return ResultCode::PARSE_ERROR;
+    if (lower.find("out of memory") != std::string::npos || lower.find("oom") != std::string::npos)
+        return ResultCode::OOM;
+    return ResultCode::UNKNOWN;
+}
+
+static void fillResultFromProcessRun(ParseResult& result, const ProcessRunResult& pr, bool json_success) {
+    result.parse_time = pr.wall_time_ms;
+    result.peak_rss_kb = pr.peak_rss_kb;
+    result.exit_code = pr.exit_code;
+    result.stderr_snippet = pr.stderr_output;
+    if (pr.peak_rss_kb > 0) result.memory_usage = pr.peak_rss_kb;
+    if (pr.timed_out) {
+        result.result_code = ResultCode::TIMEOUT;
+        result.success = false;
+        if (result.errors.empty()) result.errors.push_back("命令执行超时");
+    } else if (pr.exit_code != 0 && pr.term_signal != 0) {
+        result.result_code = ResultCode::CRASH;
+        result.success = false;
+    } else if (pr.exit_code != 0) {
+        result.result_code = resultCodeFromStderr(pr.stderr_output);
+        result.success = false;
+    } else {
+        result.result_code = json_success ? ResultCode::OK : ResultCode::PARSE_ERROR;
+        result.success = json_success;
+    }
+}
+
 // ======== NativeParser 实现 ========
 NativeParser::NativeParser() {
     // 不需要初始化
@@ -81,19 +124,19 @@ ParseResult NativeParser::parse(const std::string& filename) {
         // 构建调用wrapper的命令
         std::string cmd = wrapper_path + " \"" + filename + "\"";
         
-        // 记录开始时的内存使用
-        size_t initial_memory = PerformanceMetrics::getCurrentMemoryUsage();
-        
-        // 调用外部程序解析文件
-        std::string output;
-        double parse_time = PerformanceMetrics::measureExecutionTime([&]() {
-            output = exec(cmd);
-        });
-        
-        // 计算内存使用
-        size_t final_memory = PerformanceMetrics::getCurrentMemoryUsage();
-        result.memory_usage = final_memory - initial_memory;
-        result.parse_time = parse_time;
+        ProcessRunResult pr = runExternalCommand(cmd);
+        std::string output = pr.stdout_output;
+        result.parse_time = pr.wall_time_ms;
+        result.peak_rss_kb = pr.peak_rss_kb;
+        result.exit_code = pr.exit_code;
+        result.stderr_snippet = pr.stderr_output;
+        if (pr.peak_rss_kb > 0) result.memory_usage = pr.peak_rss_kb;
+        if (pr.timed_out) {
+            result.success = false;
+            result.result_code = ResultCode::TIMEOUT;
+            result.errors.push_back("命令执行超时");
+            return result;
+        }
         
         // 解析JSON输出
         try {
@@ -101,9 +144,9 @@ ParseResult NativeParser::parse(const std::string& filename) {
             
             // 填充结果结构
             result.success = json["success"].getBool();
-            // 只使用wrapper报告的解析时间，忽略进程启动时间
+            result.result_code = result.success ? ResultCode::OK : ResultCode::PARSE_ERROR;
+            // 只使用wrapper报告的解析时间
             result.parse_time = json["parse_time"].getNumber();
-            // 使用wrapper报告的内存使用，更准确
             result.memory_usage = static_cast<size_t>(json["memory_usage"].getNumber());
             result.ast_node_count = static_cast<size_t>(json["ast_node_count"].getNumber());
             
@@ -116,11 +159,13 @@ ParseResult NativeParser::parse(const std::string& filename) {
             }
         } catch (const std::exception& e) {
             result.success = false;
+            result.result_code = ResultCode::PARSE_ERROR;
             result.errors.push_back(std::string("解析JSON输出失败: ") + e.what());
             result.errors.push_back("原始输出: " + output);
         }
     } catch (const std::exception& e) {
         result.success = false;
+        result.result_code = ResultCode::CRASH;
         result.errors.push_back(std::string("执行外部解析器失败: ") + e.what());
     }
     
@@ -158,8 +203,23 @@ ParseResult PySMTParser::parse(const std::string& filename) {
         // 构建Python命令
         std::string cmd = python_path + " \"" + script_path + "\" \"" + filename + "\"";
         
-        // 执行Python脚本
-        std::string output = exec(cmd);
+        ProcessRunResult pr = runExternalCommand(cmd);
+        std::string output = pr.stdout_output;
+        result.peak_rss_kb = pr.peak_rss_kb;
+        result.exit_code = pr.exit_code;
+        result.stderr_snippet = pr.stderr_output;
+        result.parse_time = pr.wall_time_ms;
+        if (pr.peak_rss_kb > 0) result.memory_usage = pr.peak_rss_kb;
+        if (pr.timed_out) {
+            result.success = false;
+            result.result_code = ResultCode::TIMEOUT;
+            result.errors.push_back("命令执行超时");
+            return result;
+        }
+        if (pr.exit_code != 0) {
+            result.result_code = resultCodeFromStderr(pr.stderr_output);
+            result.success = false;
+        }
         
         // 检查输出是否为空
         if (output.empty()) {
@@ -175,6 +235,7 @@ ParseResult PySMTParser::parse(const std::string& filename) {
             
             // 填充结果结构
             result.success = json["success"].getBool();
+            result.result_code = result.success ? ResultCode::OK : ResultCode::PARSE_ERROR;
             result.parse_time = json["parse_time"].getNumber();
             result.memory_usage = static_cast<size_t>(json["memory_usage"].getNumber());
             result.ast_node_count = static_cast<size_t>(json["ast_node_count"].getNumber());
@@ -201,8 +262,9 @@ ParseResult PySMTParser::parse(const std::string& filename) {
             }
         }
         
-    } catch (const std::exception& e) {
+        } catch (const std::exception& e) {
         result.success = false;
+        result.result_code = ResultCode::CRASH;
         result.errors.push_back(std::string("执行pySMT解析器失败: ") + e.what());
     }
     
@@ -224,22 +286,30 @@ ParseResult JSMTLIBParser::parse(const std::string& filename) {
     std::string classpath = "\"" + jsmtlib_src + ":" + abs_jsmtlib_path.string() + "\"";
     std::string cmd = "java -cp " + classpath + " jsmtlib_parser \"" + abs_filename_path.string() + "\"";
     
-    // 调用Java解析器程序
-    std::string output;
-    try {
-        output = exec(cmd);
-    } catch (const std::exception& e) {
+    ProcessRunResult pr = runExternalCommand(cmd);
+    std::string output = pr.stdout_output;
+    result.parse_time = pr.wall_time_ms;
+    result.peak_rss_kb = pr.peak_rss_kb;
+    result.exit_code = pr.exit_code;
+    result.stderr_snippet = pr.stderr_output;
+    if (pr.peak_rss_kb > 0) result.memory_usage = pr.peak_rss_kb;
+    if (pr.timed_out) {
         result.success = false;
-        result.errors.push_back(e.what());
+        result.result_code = ResultCode::TIMEOUT;
+        result.errors.push_back("命令执行超时");
         return result;
     }
+    if (pr.exit_code != 0) {
+        result.success = false;
+        result.result_code = resultCodeFromStderr(pr.stderr_output);
+    }
     
-    // 解析JSON输出
     try {
         SimpleJson::Value json = SimpleJson::Parser::parse(output);
         
         // 填充结果结构
         result.success = json["success"].getBool();
+        result.result_code = result.success ? ResultCode::OK : ResultCode::PARSE_ERROR;
         result.parse_time = json["parse_time"].getNumber();
         result.memory_usage = static_cast<size_t>(json["memory_usage"].getNumber());
         result.ast_node_count = static_cast<size_t>(json["ast_node_count"].getNumber());
@@ -261,11 +331,11 @@ ParseResult JSMTLIBParser::parse(const std::string& filename) {
                 }
             }
         } catch (...) {
-            // 忽略解析方法获取失败
         }
         
     } catch (const std::exception& e) {
         result.success = false;
+        result.result_code = ResultCode::PARSE_ERROR;
         result.errors.push_back(std::string("解析JSON输出失败: ") + e.what());
         result.errors.push_back("原始输出: " + output);
     }
@@ -308,8 +378,20 @@ bool ParserManager::initializeParsers() {
         } catch (const std::exception& e) {
             std::cerr << "警告: 无法初始化ANTLR4解析器: " << e.what() << std::endl;
         }
-
         
+        // 尝试添加 cvc5 解析器
+        try {
+            addParser(std::make_shared<Cvc5Parser>());
+        } catch (const std::exception& e) {
+            std::cerr << "警告: 无法初始化 cvc5 解析器: " << e.what() << std::endl;
+        }
+        
+        // 尝试添加 smt-switch 解析器
+        try {
+            addParser(std::make_shared<SmtSwitchParser>());
+        } catch (const std::exception& e) {
+            std::cerr << "警告: 无法初始化 smt-switch 解析器: " << e.what() << std::endl;
+        }
 
         
         return !parsers.empty();
@@ -532,9 +614,11 @@ ParseResult ParserManager::testFileWithParser(const std::string& filename, const
         result = parser->parse(filename);
     } catch (const std::exception& e) {
         result.success = false;
+        result.result_code = ResultCode::CRASH;
         result.errors.push_back(std::string("解析器异常: ") + e.what());
     } catch (...) {
         result.success = false;
+        result.result_code = ResultCode::CRASH;
         result.errors.push_back("未知异常");
     }
     
@@ -947,22 +1031,30 @@ ParseResult Z3Parser::parse(const std::string& filename) {
     // 构建调用z3_parser的命令
     std::string cmd = parser_path + " \"" + filename + "\"";
     
-    // 调用外部z3_parser程序
-    std::string output;
-    try {
-        output = exec(cmd);
-    } catch (const std::exception& e) {
+    ProcessRunResult pr = runExternalCommand(cmd);
+    std::string output = pr.stdout_output;
+    result.parse_time = pr.wall_time_ms;
+    result.peak_rss_kb = pr.peak_rss_kb;
+    result.exit_code = pr.exit_code;
+    result.stderr_snippet = pr.stderr_output;
+    if (pr.peak_rss_kb > 0) result.memory_usage = pr.peak_rss_kb;
+    if (pr.timed_out) {
         result.success = false;
-        result.errors.push_back(e.what());
+        result.result_code = ResultCode::TIMEOUT;
+        result.errors.push_back("命令执行超时");
         return result;
     }
+    if (pr.exit_code != 0) {
+        result.success = false;
+        result.result_code = resultCodeFromStderr(pr.stderr_output);
+    }
     
-    // 解析JSON输出
     try {
         SimpleJson::Value json = SimpleJson::Parser::parse(output);
         
         // 填充结果结构
         result.success = json["success"].getBool();
+        result.result_code = result.success ? ResultCode::OK : ResultCode::PARSE_ERROR;
         result.parse_time = json["parse_time"].getNumber();
         result.memory_usage = static_cast<size_t>(json["memory_usage"].getNumber());
         result.ast_node_count = static_cast<size_t>(json["ast_node_count"].getNumber());
@@ -989,6 +1081,7 @@ ParseResult Z3Parser::parse(const std::string& filename) {
         
     } catch (const std::exception& e) {
         result.success = false;
+        result.result_code = ResultCode::PARSE_ERROR;
         result.errors.push_back(std::string("解析JSON输出失败: ") + e.what());
         result.errors.push_back("原始输出: " + output);
     }
@@ -1000,32 +1093,36 @@ ParseResult Z3Parser::parse(const std::string& filename) {
 ParseResult ANTLR4Parser::parse(const std::string& filename) {
     ParseResult result;
     
-    // 构建调用Java ANTLR4解析器的命令
-    // 使用绝对路径构建classpath，避免cd命令
     std::filesystem::path abs_antlr4_path = std::filesystem::absolute(parser_path);
     std::filesystem::path abs_filename_path = std::filesystem::absolute(filename);
     
-    // 构建classpath，包含ANTLR4解析器的所有必要路径和运行时库
     std::string antlr_jar = abs_antlr4_path.string() + "/antlr-4.13.2-complete.jar";
     std::string classpath = "\"" + abs_antlr4_path.string() + ":" + antlr_jar + "\"";
     std::string cmd = "java -cp " + classpath + " antlr4_parser \"" + abs_filename_path.string() + "\"";
     
-    // 调用Java ANTLR4解析器程序
-    std::string output;
-    try {
-        output = exec(cmd);
-    } catch (const std::exception& e) {
+    ProcessRunResult pr = runExternalCommand(cmd);
+    std::string output = pr.stdout_output;
+    result.parse_time = pr.wall_time_ms;
+    result.peak_rss_kb = pr.peak_rss_kb;
+    result.exit_code = pr.exit_code;
+    result.stderr_snippet = pr.stderr_output;
+    if (pr.peak_rss_kb > 0) result.memory_usage = pr.peak_rss_kb;
+    if (pr.timed_out) {
         result.success = false;
-        result.errors.push_back(e.what());
+        result.result_code = ResultCode::TIMEOUT;
+        result.errors.push_back("命令执行超时");
         return result;
     }
+    if (pr.exit_code != 0) {
+        result.success = false;
+        result.result_code = resultCodeFromStderr(pr.stderr_output);
+    }
     
-    // 解析JSON输出
     try {
         SimpleJson::Value json = SimpleJson::Parser::parse(output);
         
-        // 填充结果结构
         result.success = json["success"].getBool();
+        result.result_code = result.success ? ResultCode::OK : ResultCode::PARSE_ERROR;
         result.parse_time = json["parse_time"].getNumber();
         result.memory_usage = static_cast<size_t>(json["memory_usage"].getNumber());
         result.ast_node_count = static_cast<size_t>(json["ast_node_count"].getNumber());
@@ -1052,6 +1149,7 @@ ParseResult ANTLR4Parser::parse(const std::string& filename) {
         
     } catch (const std::exception& e) {
         result.success = false;
+        result.result_code = ResultCode::PARSE_ERROR;
         result.errors.push_back(std::string("解析JSON输出失败: ") + e.what());
         result.errors.push_back("原始输出: " + output);
     }
@@ -1059,8 +1157,119 @@ ParseResult ANTLR4Parser::parse(const std::string& filename) {
     return result;
 }
 
+// ======== Cvc5Parser 实现 ========
+Cvc5Parser::Cvc5Parser(const std::string& path)
+    : ExternalParser(
+          path,
+          "cvc5",
+          "1.0",
+          "C++",
+          {"SMT-LIB 2.6", "cvc5 求解器前端", "https://github.com/cvc5/cvc5"}
+      ),
+      cvc5_bin_("") {
+    namespace fs = std::filesystem;
+    fs::path base(path);
+    if (fs::exists(base) && fs::is_directory(base)) {
+        for (const auto& sub : { base / "build" / "bin" / "cvc5", base / "bin" / "cvc5" }) {
+            if (fs::exists(sub) && fs::is_regular_file(sub)) {
+                cvc5_bin_ = sub.string();
+                break;
+            }
+        }
+    }
+    if (cvc5_bin_.empty()) {
+        if (fs::exists(base) && fs::is_regular_file(base))
+            cvc5_bin_ = path;
+        else
+            cvc5_bin_ = "cvc5";
+    }
+}
 
+ParseResult Cvc5Parser::parse(const std::string& filename) {
+    ParseResult result;
+    if (cvc5_bin_.empty()) {
+        result.success = false;
+        result.result_code = ResultCode::UNKNOWN;
+        result.errors.push_back("cvc5 可执行文件未找到");
+        return result;
+    }
+    std::string abs_path = std::filesystem::absolute(filename).string();
+    std::string cmd = cvc5_bin_ + " \"" + abs_path + "\"";
+    ProcessRunResult pr = runExternalCommand(cmd);
+    result.parse_time = pr.wall_time_ms;
+    result.peak_rss_kb = pr.peak_rss_kb;
+    result.exit_code = pr.exit_code;
+    result.stderr_snippet = pr.stderr_output;
+    if (pr.peak_rss_kb > 0) result.memory_usage = pr.peak_rss_kb;
+    if (pr.timed_out) {
+        result.success = false;
+        result.result_code = ResultCode::TIMEOUT;
+        result.errors.push_back("命令执行超时");
+        return result;
+    }
+    result.success = (pr.exit_code == 0);
+    result.result_code = result.success ? ResultCode::OK : resultCodeFromStderr(pr.stderr_output);
+    if (!pr.stderr_output.empty() && !result.success) {
+        std::istringstream iss(pr.stderr_output);
+        std::string line;
+        while (std::getline(iss, line))
+            if (!line.empty()) result.errors.push_back(line);
+    }
+    return result;
+}
 
+// ======== SmtSwitchParser 实现 ========
+SmtSwitchParser::SmtSwitchParser(const std::string& path)
+    : ExternalParser(
+          path,
+          "smt-switch",
+          "1.0",
+          "C++",
+          {"SMT-LIB 2.6", "通用 SMT API", "https://github.com/stanford-centaur/smt-switch"}
+      ) {}
 
+ParseResult SmtSwitchParser::parse(const std::string& filename) {
+    ParseResult result;
+    if (parser_path.empty() || access(parser_path.c_str(), F_OK) != 0) {
+        result.success = false;
+        result.result_code = ResultCode::UNKNOWN;
+        result.errors.push_back("smt_switch_parser 可执行文件未找到，请参考 external/smt-switch/README.md 编译");
+        return result;
+    }
+    std::string abs_path = std::filesystem::absolute(filename).string();
+    std::string cmd = parser_path + " \"" + abs_path + "\"";
+    ProcessRunResult pr = runExternalCommand(cmd);
+    std::string output = pr.stdout_output;
+    result.parse_time = pr.wall_time_ms;
+    result.peak_rss_kb = pr.peak_rss_kb;
+    result.exit_code = pr.exit_code;
+    result.stderr_snippet = pr.stderr_output;
+    if (pr.peak_rss_kb > 0) result.memory_usage = pr.peak_rss_kb;
+    if (pr.timed_out) {
+        result.success = false;
+        result.result_code = ResultCode::TIMEOUT;
+        result.errors.push_back("命令执行超时");
+        return result;
+    }
+    if (pr.exit_code != 0)
+        result.result_code = resultCodeFromStderr(pr.stderr_output);
+    try {
+        SimpleJson::Value json = SimpleJson::Parser::parse(output);
+        result.success = json["success"].getBool();
+        result.result_code = result.success ? ResultCode::OK : ResultCode::PARSE_ERROR;
+        result.parse_time = json["parse_time"].getNumber();
+        result.memory_usage = static_cast<size_t>(json["memory_usage"].getNumber());
+        result.ast_node_count = static_cast<size_t>(json["ast_node_count"].getNumber());
+        if (json["errors"].isArray())
+            for (const auto& e : json["errors"].getArray())
+                result.errors.push_back(e.getString());
+    } catch (...) {
+        result.success = false;
+        if (result.result_code == ResultCode::UNKNOWN) result.result_code = ResultCode::PARSE_ERROR;
+        result.errors.push_back("解析 smt-switch 输出失败");
+        if (!output.empty()) result.errors.push_back("原始输出: " + output.substr(0, 200));
+    }
+    return result;
+}
 
 } // namespace SMTComparison 

@@ -18,6 +18,7 @@
 #include <unistd.h>
 #include <signal.h>
 #include "simple_json.h"
+#include "result_code.h"
 
 // 添加缺少的头文件
 #ifdef _WIN32
@@ -96,9 +97,15 @@ public:
 struct ParseResult {
     bool success;                  // 解析是否成功
     double parse_time;             // 解析时间(ms)
-    size_t memory_usage;           // 内存使用量(KB)
+    size_t memory_usage;           // 内存使用量(KB)，与 peak_rss_kb 二选一或并存
     size_t ast_node_count;         // AST节点数量
     std::vector<std::string> errors; // 错误信息
+
+    // 论文级统计字段（Commit 2+）
+    ResultCode result_code = ResultCode::UNKNOWN;
+    int exit_code = -1;            // 外部进程退出码，-1 表示不适用
+    std::string stderr_snippet;    // 截断到约 512 字符
+    size_t peak_rss_kb = 0;        // 子进程峰值 RSS；0 表示未采集
 
     ParseResult() : success(false), parse_time(0), memory_usage(0),
                    ast_node_count(0) {}
@@ -334,8 +341,23 @@ public:
     ParseResult parse(const std::string& filename) override;
 };
 
+// ======== cvc5 解析器实现 ========
+// 调用 cvc5 二进制（https://github.com/cvc5/cvc5）解析 SMT-LIB，无 JSON 输出，由 ProcessRunResult 填结果
+class Cvc5Parser : public ExternalParser {
+public:
+    Cvc5Parser(const std::string& path = "external/cvc5");
+    ParseResult parse(const std::string& filename) override;
+private:
+    std::string cvc5_bin_;  // 解析得到的可执行路径
+};
 
-
+// ======== smt-switch 解析器实现 ========
+// 调用 smt-switch 包装的可执行（https://github.com/stanford-centaur/smt-switch），需自行编译 external/smt-switch 下的解析器
+class SmtSwitchParser : public ExternalParser {
+public:
+    SmtSwitchParser(const std::string& path = "external/smt-switch/build/smt_switch_parser");
+    ParseResult parse(const std::string& filename) override;
+};
 
 
 // ======== 解析器管理器 ========
@@ -373,6 +395,11 @@ public:
     // 获取已加载的解析器数量
     size_t getParserCount() const {
         return parsers.size();
+    }
+    
+    // 获取解析器列表（用于 BenchmarkRunner）
+    const std::vector<std::shared_ptr<ParserInterface>>& getParsers() const {
+        return parsers;
     }
     
     // 列出所有可用的解析器

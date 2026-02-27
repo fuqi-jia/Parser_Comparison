@@ -15,7 +15,13 @@ set(HEADERS
 include_directories(${CMAKE_SOURCE_DIR}/SMTParser/include)
 
 # 添加库文件
-add_library(smt_parser_lib STATIC smt_parser_comparison.cpp)
+add_library(smt_parser_lib STATIC
+    smt_parser_comparison.cpp
+    process_runner.cpp
+    metrics_collector.cpp
+    benchmark_runner.cpp
+    report_writer.cpp
+)
 
 # 链接SMTParser库
 target_link_libraries(smt_parser_lib PUBLIC smtparser_static)

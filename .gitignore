@@ -61,6 +61,72 @@ install_manifest.txt
 # solvers
 z3-z3-4.15.2/
 
+# external 中第三方求解器/解析器源码（保留各目录下 README 与自建脚本）
+# cvc5 源码（克隆到 external/cvc5 后的仓库内容）
+external/cvc5/.git/
+external/cvc5/build/
+external/cvc5/src/
+external/cvc5/include/
+external/cvc5/examples/
+external/cvc5/test/
+external/cvc5/cmake/
+external/cvc5/contrib/
+external/cvc5/docs/
+external/cvc5/licenses/
+external/cvc5/proofs/
+external/cvc5/.github/
+external/cvc5/configure.sh
+external/cvc5/CMakeLists.txt
+external/cvc5/INSTALL.rst
+external/cvc5/NEWS.md
+external/cvc5/COPYING
+external/cvc5/AUTHORS
+external/cvc5/.clang-format
+external/cvc5/.clang-tidy
+external/cvc5/.mailmap
+external/cvc5/.style.yapf
+external/cvc5/VERSION
+# cvc5 预编译发布包（如 cvc5-Linux-x86_64-libcxx-static 解压目录）
+cvc5-Linux-*/
+cvc5-*-static/
+external/cvc5/cvc5-Linux-*/
+external/cvc5/cvc5-*-static/
+
+# z3 源码（external/z3 下克隆的 z3 仓库）
+external/z3/z3-z3-*/
+external/z3/.git/
+
+# smt-switch 源码与构建（保留 external/smt-switch/README.md 与 src/smt_switch_parser.cpp）
+external/smt-switch/.git/
+external/smt-switch/build/
+external/smt-switch/bitwuzla/
+external/smt-switch/btor/
+external/smt-switch/cvc5/
+external/smt-switch/cmake/
+external/smt-switch/contrib/
+external/smt-switch/examples/
+external/smt-switch/include/
+external/smt-switch/msat/
+external/smt-switch/python/
+external/smt-switch/scripts/
+external/smt-switch/tests/
+external/smt-switch/yices2/
+external/smt-switch/z3/
+external/smt-switch/configure.sh
+external/smt-switch/CMakeLists.txt
+external/smt-switch/LICENSE
+external/smt-switch/AUTHORS
+external/smt-switch/CONTRIBUTING.md
+external/smt-switch/DEVELOPERS.md
+external/smt-switch/THANKS
+external/smt-switch/VERSION
+external/smt-switch/.clang-format
+external/smt-switch/.clangd
+external/smt-switch/issues.md
+# smt-switch 发布包（如 smt-switch-1.0.6 解压/安装目录）
+smt-switch-*/
+external/smt-switch/smt-switch-*/
+
 # results
 results/*
 results_failed/
