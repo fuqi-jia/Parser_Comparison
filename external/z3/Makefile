@@ -12,10 +12,10 @@ Z3_SRC := $(shell ls -d z3-z3-* 2>/dev/null | head -1)
 
 ifneq ($(Z3_PREBUILT),)
   Z3_INCLUDE = $(Z3_PREBUILT)/include
-  Z3_LIB = $(Z3_PREBUILT)/lib
+  Z3_LIB = $(shell Z3P="$(Z3_PREBUILT)"; if [ -f "$$Z3P/lib/libz3.so" ] || [ -f "$$Z3P/lib/libz3.a" ]; then echo "$$Z3P/lib"; else echo "$$Z3P/bin"; fi)
   Z3_LIBS = -lz3
   INCLUDES = -I$(Z3_INCLUDE)
-  LDFLAGS = -L$(Z3_LIB) -Wl,-rpath,$$ORIGIN/$(Z3_PREBUILT)/lib
+  LDFLAGS = -L$(Z3_LIB) -Wl,-rpath,$$ORIGIN/$(Z3_LIB)
 else ifneq ($(Z3_SRC),)
   Z3_INCLUDE = $(Z3_SRC)/src/api/c++
   Z3_LIB = $(Z3_SRC)/build

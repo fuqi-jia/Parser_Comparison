@@ -25,9 +25,9 @@ ANTLR4_JAR = $(shell \
 		echo "$(ANTLR4_JAR_DIR)"; \
 	fi)
 
-# 语法文件设置
+# 语法文件设置：优先 smtlibv2-grammar，其次 smtlibv2-grammar-master，再次当前目录
 GRAMMAR_FILE = SMTLIBv2.g4
-GRAMMAR_SRC = smtlibv2-grammar/src/main/resources/$(GRAMMAR_FILE)
+GRAMMAR_SRC = $(shell if [ -f "smtlibv2-grammar/src/main/resources/$(GRAMMAR_FILE)" ]; then echo "smtlibv2-grammar/src/main/resources/$(GRAMMAR_FILE)"; elif [ -f "smtlibv2-grammar-master/src/main/resources/$(GRAMMAR_FILE)" ]; then echo "smtlibv2-grammar-master/src/main/resources/$(GRAMMAR_FILE)"; elif [ -f "$(GRAMMAR_FILE)" ]; then echo "$(GRAMMAR_FILE)"; else echo ""; fi)
 GRAMMAR_LOCAL = $(GRAMMAR_FILE)
 
 # 生成的Java文件

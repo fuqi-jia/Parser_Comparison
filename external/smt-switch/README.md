@@ -1,50 +1,50 @@
 # smt-switch 解析器支持
 
-[smt-switch](https://github.com/stanford-centaur/smt-switch) 是斯坦福 Centaur 的**通用 C++ SMT API**。本仓库提供**独立可执行** `smt_switch_parser`（不链接 smt-switch 库），通过调用 **cvc5 二进制**解析 SMT-LIB 并输出本对比工具所需的 JSON，便于与 z3、cvc5 等解析器一起参与 benchmark。
+[smt-switch](https://github.com/stanford-centaur/smt-switch) 是斯坦福 Centaur 的**通用 C++ SMT API**。本仓库提供 **smt_switch_parser**，使用 smt-switch 自带的 **SmtLibReader**（flex/bison）解析 SMT-LIB，并输出本对比工具所需的 JSON（含 **ast_node_count**）。
 
 ## 使用方式
 
 - **parserName**：`smt-switch`
-- 本工具默认在 `external/smt-switch` 下查找可执行文件，顺序：
-  1. `external/smt-switch/build/smt_switch_parser`（本仓库 CMake 或手动编译）
-  2. `external/smt-switch/smt-switch-1.0.6/build/smt_switch_parser`（或其它 `smt-switch-*` 发布目录下的 `build/smt_switch_parser`）
+- 本工具在 `external/smt-switch` 下查找可执行文件，顺序：
+  1. `external/smt-switch/build/smt_switch_parser`
+  2. `external/smt-switch/build/smt-switch-1.0.6/smt_switch_parser`（从 add_subdirectory 构建时）
+  3. `external/smt-switch/smt-switch-1.0.6/build/smt_switch_parser`
 
-## 编译 smt_switch_parser（推荐：本仓库独立编译）
+## 编译 smt_switch_parser（需 SmtLibReader + CVC5 后端）
 
-本目录提供不依赖 smt-switch 库的实现，仅依赖 **cvc5 二进制**（用于实际解析）。编译后即可参与对比。
+本实现依赖 **smt-switch-1.0.6** 源码、**bison ≥ 3.7**、**flex ≥ 2.6**，以及 **cvc5 源码**（供 smt-switch 的 CVC5 后端链接）。
+
+### 在 smt-switch-1.0.6 目录内构建
 
 ```bash
-# 在 Parser_Comparison 根目录
-mkdir -p external/smt-switch/build
-cd external/smt-switch/build
-cmake ..
+cd external/smt-switch/smt-switch-1.0.6
+mkdir build && cd build
+cmake .. -DSMTLIB_READER=ON -DBUILD_CVC5=ON -DCVC5_HOME=/path/to/cvc5/source
 make
-# 得到 build/smt_switch_parser
+# 得到 build/smt_switch_parser（且存在 ../src/smt_switch_parser.cpp 时）
 ```
 
-或使用单文件编译（无需 CMake）：
+`CVC5_HOME` 需指向 **cvc5 源码根目录**（含 `src/`、`build/` 等），smt-switch 会链接其 `build/src/libcvc5.a` 等。
+
+### 从 external/smt-switch 根目录构建
 
 ```bash
 cd external/smt-switch
-mkdir -p build
-c++ -std=c++17 -O2 -o build/smt_switch_parser src/smt_switch_parser.cpp
+mkdir build && cd build
+cmake .. -DSMTLIB_READER=ON -DBUILD_CVC5=ON -DCVC5_HOME=/path/to/cvc5/source
+make
+# 得到 build/smt-switch-1.0.6/smt_switch_parser
 ```
-
-`smt_switch_parser` 会自行查找 cvc5：优先使用环境变量 `CVC5_BIN`，否则在相对路径下查找 `../cvc5/.../bin/cvc5` 或系统 `cvc5`。确保 cvc5 已就绪（如 `external/cvc5/cvc5-Linux-x86_64-libcxx-static/bin/cvc5` 或 PATH 中的 `cvc5`）。
-
-## 可选：使用 smt-switch 发布包目录
-
-若使用 smt-switch 官方发布包（如解压得到 `smt-switch-1.0.6`），可将本仓库的 `src/smt_switch_parser.cpp` 复制到该目录下，用其 CMake 或单独编译，生成 `smt-switch-1.0.6/build/smt_switch_parser`。本工具会自动识别 `external/smt-switch/smt-switch-*/build/smt_switch_parser`。
 
 ## 输出格式
 
-可执行文件需向 **stdout** 输出一行 JSON，例如：
+可执行文件向 **stdout** 输出一行 JSON，例如：
 
 ```json
-{"success": true, "parse_time": 12.5, "memory_usage": 0, "ast_node_count": 0, "errors": []}
+{"success": true, "parse_time": 12.5, "memory_usage": 1024, "ast_node_count": 42, "errors": []}
 ```
 
-解析失败时 `success: false`，并在 `errors` 中填入简要信息。本仓库提供的 `smt_switch_parser.cpp` 已实现该格式。
+解析失败时 `success: false`，并在 `errors` 中填入简要信息。
 
 ## 参考
 

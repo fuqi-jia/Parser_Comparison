@@ -48,6 +48,40 @@ static ProcessRunResult runExternalCommand(const std::string& cmd) {
     return ProcessRunner::run(cmd, g_timeout_seconds);
 }
 
+// 解析 external 下 parser 的路径：从项目根目录查找（支持从 build/ 运行）
+static std::string resolveExternalPath(const std::string& path) {
+    namespace fs = std::filesystem;
+    fs::path p(path);
+    if (p.is_absolute() && fs::exists(p))
+        return p.string();
+    fs::path base;
+    // 1) 当前目录
+    base = fs::current_path();
+    if (fs::exists(base / p)) return (base / p).string();
+    // 2) 上一级（例如从 build/ 运行）
+    base = fs::current_path().parent_path();
+    if (fs::exists(base / p)) return (base / p).string();
+#ifdef __linux__
+    // 3) 从可执行文件路径向上找包含 external 的目录
+    char buf[4096];
+    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (n > 0) {
+        buf[n] = '\0';
+        fs::path exe_dir = fs::path(buf).parent_path();
+        for (int i = 0; i < 5; ++i) {
+            if (exe_dir.empty() || !fs::exists(exe_dir)) break;
+            if (fs::exists(exe_dir / "external")) {
+                base = exe_dir;
+                if (fs::exists(base / p)) return (base / p).string();
+                break;
+            }
+            exe_dir = exe_dir.parent_path();
+        }
+    }
+#endif
+    return path;
+}
+
 static ResultCode resultCodeFromStderr(const std::string& stderr_out) {
     std::string lower;
     lower.reserve(stderr_out.size());
@@ -279,7 +313,7 @@ ParseResult JSMTLIBParser::parse(const std::string& filename) {
     
     // 构建调用Java解析器的命令
     // 使用绝对路径构建classpath，避免cd命令
-    std::filesystem::path abs_jsmtlib_path = std::filesystem::absolute(parser_path);
+    std::filesystem::path abs_jsmtlib_path(resolveExternalPath(parser_path));
     std::filesystem::path abs_filename_path = std::filesystem::absolute(filename);
     
     std::string jsmtlib_src = abs_jsmtlib_path.string() + "/jSMTLIB-0.9.10.1/SMT/src";
@@ -321,17 +355,7 @@ ParseResult JSMTLIBParser::parse(const std::string& filename) {
                 result.errors.push_back(err.getString());
             }
         }
-        
-        // 获取解析方法信息（如果有）
-        try {
-            if (json.isObject()) {
-                const auto& obj = json.getObject();
-                if (obj.find("parsing_method") != obj.end()) {
-                    result.errors.push_back("解析方法: " + obj.at("parsing_method").getString());
-                }
-            }
-        } catch (...) {
-        }
+        // parsing_method 为元数据，不放入 errors，避免成功时误显示为“错误信息”
         
     } catch (const std::exception& e) {
         result.success = false;
@@ -414,7 +438,10 @@ std::vector<ParseResult> ParserManager::testFile(const std::string& filename) {
             std::cout << "  解析状态: " << (result.success ? "成功" : "失败") << std::endl;
             std::cout << "  解析时间: " << result.parse_time << " ms" << std::endl;
             std::cout << "  内存使用: " << result.memory_usage << " KB" << std::endl;
-            std::cout << "  AST节点数: " << result.ast_node_count << std::endl;
+            std::cout << "  AST节点数: " << result.ast_node_count;
+            if (parser->getName() == "antlr4")
+                std::cout << " (parse tree 节点，与其他 parser 的语义 AST 口径不同)";
+            std::cout << std::endl;
             
             if (!result.errors.empty()) {
                 std::cout << "  错误信息:" << std::endl;
@@ -1027,9 +1054,11 @@ void ParserManager::generateSingleParserReport(
 // ======== Z3Parser 实现 ========
 ParseResult Z3Parser::parse(const std::string& filename) {
     ParseResult result;
-    
-    // 构建调用z3_parser的命令
-    std::string cmd = parser_path + " \"" + filename + "\"";
+    std::string exe = resolveExternalPath(parser_path);
+    namespace fs = std::filesystem;
+    if (fs::exists(exe) && fs::is_directory(fs::path(exe)))
+        exe = (fs::path(exe) / "z3_parser").string();
+    std::string cmd = exe + " \"" + std::filesystem::absolute(filename).string() + "\"";
     
     ProcessRunResult pr = runExternalCommand(cmd);
     std::string output = pr.stdout_output;
@@ -1067,18 +1096,7 @@ ParseResult Z3Parser::parse(const std::string& filename) {
             }
         }
         
-        // 获取解析方法信息（如果有）
-        try {
-            if (json.isObject()) {
-                const auto& obj = json.getObject();
-                if (obj.find("parsing_method") != obj.end()) {
-                    result.errors.push_back("解析方法: " + obj.at("parsing_method").getString());
-                }
-            }
-        } catch (...) {
-            // 忽略解析方法获取失败
-        }
-        
+        // parsing_method 为元数据，不放入 errors
     } catch (const std::exception& e) {
         result.success = false;
         result.result_code = ResultCode::PARSE_ERROR;
@@ -1093,12 +1111,12 @@ ParseResult Z3Parser::parse(const std::string& filename) {
 ParseResult ANTLR4Parser::parse(const std::string& filename) {
     ParseResult result;
     
-    std::filesystem::path abs_antlr4_path = std::filesystem::absolute(parser_path);
-    std::filesystem::path abs_filename_path = std::filesystem::absolute(filename);
+    std::string abs_antlr4_path = resolveExternalPath(parser_path);
+    std::string abs_filename_path = std::filesystem::absolute(filename).string();
     
-    std::string antlr_jar = abs_antlr4_path.string() + "/antlr-4.13.2-complete.jar";
-    std::string classpath = "\"" + abs_antlr4_path.string() + ":" + antlr_jar + "\"";
-    std::string cmd = "java -cp " + classpath + " antlr4_parser \"" + abs_filename_path.string() + "\"";
+    std::string antlr_jar = abs_antlr4_path + "/antlr-4.13.2-complete.jar";
+    std::string classpath = "\"" + abs_antlr4_path + ":" + antlr_jar + "\"";
+    std::string cmd = "java -cp " + classpath + " antlr4_parser \"" + abs_filename_path + "\"";
     
     ProcessRunResult pr = runExternalCommand(cmd);
     std::string output = pr.stdout_output;
@@ -1135,18 +1153,7 @@ ParseResult ANTLR4Parser::parse(const std::string& filename) {
             }
         }
         
-        // 获取解析方法信息（如果有）
-        try {
-            if (json.isObject()) {
-                const auto& obj = json.getObject();
-                if (obj.find("parsing_method") != obj.end()) {
-                    result.errors.push_back("解析方法: " + obj.at("parsing_method").getString());
-                }
-            }
-        } catch (...) {
-            // 忽略解析方法获取失败
-        }
-        
+        // parsing_method 为元数据，不放入 errors
     } catch (const std::exception& e) {
         result.success = false;
         result.result_code = ResultCode::PARSE_ERROR;
@@ -1166,10 +1173,19 @@ Cvc5Parser::Cvc5Parser(const std::string& path)
           "C++",
           {"SMT-LIB 2.6", "cvc5 求解器前端", "https://github.com/cvc5/cvc5"}
       ),
-      cvc5_bin_("") {
+      cvc5_bin_(""),
+      cvc5_parser_exe_("") {
     namespace fs = std::filesystem;
-    fs::path base(path);
+    std::string resolved = resolveExternalPath(path);
+    fs::path base(resolved);
     if (fs::exists(base) && fs::is_directory(base)) {
+        // 优先：本目录编译的 cvc5_parser（C API，输出 JSON）
+        for (const auto& cand : { base / "build" / "cvc5_parser", base / "cvc5_parser" }) {
+            if (fs::exists(cand) && fs::is_regular_file(cand)) {
+                cvc5_parser_exe_ = cand.string();
+                break;
+            }
+        }
         for (const auto& sub : { base / "build" / "bin" / "cvc5", base / "bin" / "cvc5" }) {
             if (fs::exists(sub) && fs::is_regular_file(sub)) {
                 cvc5_bin_ = sub.string();
@@ -1193,7 +1209,7 @@ Cvc5Parser::Cvc5Parser(const std::string& path)
     }
     if (cvc5_bin_.empty()) {
         if (fs::exists(base) && fs::is_regular_file(base))
-            cvc5_bin_ = path;
+            cvc5_bin_ = resolved;
         else
             cvc5_bin_ = "cvc5";
     }
@@ -1201,13 +1217,46 @@ Cvc5Parser::Cvc5Parser(const std::string& path)
 
 ParseResult Cvc5Parser::parse(const std::string& filename) {
     ParseResult result;
+    std::string abs_path = std::filesystem::absolute(filename).string();
+    if (!cvc5_parser_exe_.empty() && access(cvc5_parser_exe_.c_str(), F_OK) == 0) {
+        std::string cmd = cvc5_parser_exe_ + " \"" + abs_path + "\"";
+        ProcessRunResult pr = runExternalCommand(cmd);
+        std::string output = pr.stdout_output;
+        result.parse_time = pr.wall_time_ms;
+        result.peak_rss_kb = pr.peak_rss_kb;
+        result.exit_code = pr.exit_code;
+        result.stderr_snippet = pr.stderr_output;
+        if (pr.peak_rss_kb > 0) result.memory_usage = pr.peak_rss_kb;
+        if (pr.timed_out) {
+            result.success = false;
+            result.result_code = ResultCode::TIMEOUT;
+            result.errors.push_back("命令执行超时");
+            return result;
+        }
+        try {
+            SimpleJson::Value json = SimpleJson::Parser::parse(output);
+            result.success = json["success"].getBool();
+            result.result_code = result.success ? ResultCode::OK : ResultCode::PARSE_ERROR;
+            result.parse_time = json["parse_time"].getNumber();
+            result.memory_usage = static_cast<size_t>(json["memory_usage"].getNumber());
+            result.ast_node_count = static_cast<size_t>(json["ast_node_count"].getNumber());
+            if (json["errors"].isArray())
+                for (const auto& e : json["errors"].getArray())
+                    result.errors.push_back(e.getString());
+        } catch (...) {
+            result.success = false;
+            if (result.result_code == ResultCode::UNKNOWN) result.result_code = ResultCode::PARSE_ERROR;
+            result.errors.push_back("解析 cvc5_parser 输出失败");
+            if (!output.empty()) result.errors.push_back("原始输出: " + output.substr(0, 200));
+        }
+        return result;
+    }
     if (cvc5_bin_.empty()) {
         result.success = false;
         result.result_code = ResultCode::UNKNOWN;
         result.errors.push_back("cvc5 可执行文件未找到");
         return result;
     }
-    std::string abs_path = std::filesystem::absolute(filename).string();
     std::string cmd = cvc5_bin_ + " \"" + abs_path + "\"";
     ProcessRunResult pr = runExternalCommand(cmd);
     result.parse_time = pr.wall_time_ms;
@@ -1243,12 +1292,20 @@ SmtSwitchParser::SmtSwitchParser(const std::string& path)
       ),
       parser_exe_("") {
     namespace fs = std::filesystem;
-    fs::path base(path);
+    std::string resolved = resolveExternalPath(path);
+    fs::path base(resolved);
     if (fs::exists(base) && fs::is_directory(base)) {
-        // 固定路径：build/smt_switch_parser（本仓库 CMake 或手动编译）
+        // 固定路径：本目录 build/smt_switch_parser（调用自己文件夹内的可执行文件）
         fs::path cand = base / "build" / "smt_switch_parser";
         if (fs::exists(cand) && fs::is_regular_file(cand)) {
             parser_exe_ = cand.string();
+        }
+        if (parser_exe_.empty()) {
+            // 从 add_subdirectory(smt-switch-1.0.6) 构建时在 build/smt-switch-1.0.6/smt_switch_parser
+            cand = base / "build" / "smt-switch-1.0.6" / "smt_switch_parser";
+            if (fs::exists(cand) && fs::is_regular_file(cand)) {
+                parser_exe_ = cand.string();
+            }
         }
         if (parser_exe_.empty()) {
             // 发布目录：smt-switch-1.0.6/build/smt_switch_parser
@@ -1266,7 +1323,7 @@ SmtSwitchParser::SmtSwitchParser(const std::string& path)
         }
     }
     if (parser_exe_.empty() && fs::exists(base) && fs::is_regular_file(base))
-        parser_exe_ = path;
+        parser_exe_ = resolved;
 }
 
 ParseResult SmtSwitchParser::parse(const std::string& filename) {

@@ -1,4 +1,0 @@
-文件名,解析时间(ms),内存使用(KB),AST节点数量,结果
-/mnt/d/D_Study/ISCAS/projects/SMT/Parser_Comparison/./test/counterexample.dump.ia32_Mul_base_disp--Add32.load32.Mul32.Mulh_u32.0005.smt2,1146.08,3072,1718,成功
-/mnt/d/D_Study/ISCAS/projects/SMT/Parser_Comparison/./test/prp-30-42.smt2,1143.61,15360,36625,成功
-平均值,1144.84,9216,19171.5,100%

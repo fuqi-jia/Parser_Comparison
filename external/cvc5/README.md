@@ -1,18 +1,31 @@
 # cvc5 解析器支持
 
-[cvc5](https://github.com/cvc5/cvc5) 是开源的 SMT 求解器（Cooperating Validity Checker 系列），支持 SMT-LIB 2.x 输入。本工具将 **cvc5 二进制** 作为“解析器”调用：对给定 `.smt2` 文件执行 cvc5，根据退出码与 stderr 判断解析是否成功，并采集 wall time 与子进程 peak RSS。
+[cvc5](https://github.com/cvc5/cvc5) 是开源的 SMT 求解器（Cooperating Validity Checker 系列），支持 SMT-LIB 2.x 输入。本工具支持两种方式：
+
+1. **cvc5_parser（推荐）**：链接 cvc5 C API（`cvc5_parser.h`），在进程内解析并输出 JSON（含 **ast_node_count**、parse_time、memory_usage）。需编译本目录下的 `cvc5_parser.cpp`，见下方「编译 cvc5_parser」。
+2. **cvc5 二进制**：若未找到 `cvc5_parser` 可执行文件，则回退到直接调用 `cvc5` 命令，仅能采集时间与 peak RSS，无节点数。
 
 ## 使用方式
 
 - **parserName**：`cvc5`
-- 本工具会按以下顺序查找 cvc5 可执行文件：
-  1. `external/cvc5/build/bin/cvc5`（从源码构建的默认路径）
-  2. `external/cvc5/bin/cvc5`
-  3. `external/cvc5/cvc5-Linux-x86_64-libcxx-static/bin/cvc5`（或其它 `cvc5-*` / `cvc5-Linux-*` 预编译目录下的 `bin/cvc5`）
-  4. 若传入路径为文件则直接使用
-  5. 否则使用 PATH 中的 `cvc5`
+- 本工具会按以下顺序查找：
+  1. **cvc5_parser**：`external/cvc5/build/cvc5_parser` 或 `external/cvc5/cvc5_parser`（输出 JSON，含 ast_node_count）
+  2. **cvc5 二进制**：`external/cvc5/build/bin/cvc5`、`external/cvc5/bin/cvc5`、`external/cvc5/cvc5-Linux-*/bin/cvc5`，或 PATH 中的 `cvc5`
 
-## 安装 cvc5
+## 编译 cvc5_parser（C API，可输出节点数）
+
+本目录提供 `cvc5_parser.cpp`，使用 cvc5 的 C 解析 API 读入 SMT-LIB 并统计断言/声明项的 AST 节点数，向 stdout 输出一行 JSON。
+
+- **使用预编译包**（如 `cvc5-Linux-x86_64-libcxx-static`）：预编译包多为 **libc++** 构建，需用 **clang** 并指定 `-stdlib=libc++` 链接，例如：
+  ```bash
+  cd external/cvc5 && mkdir -p build && cd build
+  cmake .. -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS="-stdlib=libc++" -DCMAKE_EXE_LINKER_FLAGS="-stdlib=libc++"
+  make
+  ```
+  若系统无 clang/libc++，可改用「从源码构建」cvc5 后，用其 `include`/`lib` 编译本目录的 `cvc5_parser`（此时可用 g++）。
+- **使用 cvc5 源码**：从 cvc5 源码构建后，将其 `include`、`lib` 指到本 CMake，或安装到系统后再链接。
+
+## 安装 cvc5（二进制，用于回退或单独使用）
 
 ### 方式一：从源码构建（推荐，便于控制版本与选项）
 

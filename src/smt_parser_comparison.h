@@ -342,13 +342,14 @@ public:
 };
 
 // ======== cvc5 解析器实现 ========
-// 调用 cvc5 二进制（https://github.com/cvc5/cvc5）解析 SMT-LIB，无 JSON 输出，由 ProcessRunResult 填结果
+// 优先使用 external/cvc5 下编译的 cvc5_parser（链接 C API，输出 JSON 含 ast_node_count），否则回退到 cvc5 二进制
 class Cvc5Parser : public ExternalParser {
 public:
     Cvc5Parser(const std::string& path = "external/cvc5");
     ParseResult parse(const std::string& filename) override;
 private:
-    std::string cvc5_bin_;  // 解析得到的可执行路径
+    std::string cvc5_bin_;         // cvc5 二进制（回退）
+    std::string cvc5_parser_exe_;  // cvc5_parser 可执行（输出 JSON）
 };
 
 // ======== smt-switch 解析器实现 ========
