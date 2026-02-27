@@ -8,8 +8,9 @@
 - 本工具会按以下顺序查找 cvc5 可执行文件：
   1. `external/cvc5/build/bin/cvc5`（从源码构建的默认路径）
   2. `external/cvc5/bin/cvc5`
-  3. 若传入路径为文件则直接使用
-  4. 否则使用 PATH 中的 `cvc5`
+  3. `external/cvc5/cvc5-Linux-x86_64-libcxx-static/bin/cvc5`（或其它 `cvc5-*` / `cvc5-Linux-*` 预编译目录下的 `bin/cvc5`）
+  4. 若传入路径为文件则直接使用
+  5. 否则使用 PATH 中的 `cvc5`
 
 ## 安装 cvc5
 
@@ -34,7 +35,19 @@ git clone https://github.com/cvc5/cvc5.git external/cvc5
 cd external/cvc5 && ./configure.sh && cd build && make -j$(nproc)
 ```
 
-### 方式二：使用系统或 conda 安装
+### 方式二：使用预编译包（推荐，免编译）
+
+从 [cvc5 Releases](https://github.com/cvc5/cvc5/releases) 下载对应平台的包（如 `cvc5-Linux-x86_64-libcxx-static.tar.xz`），解压到 `external/cvc5/` 下，例如：
+
+```text
+external/cvc5/cvc5-Linux-x86_64-libcxx-static/
+  bin/cvc5
+  include/ ...
+```
+
+本工具会自动识别 `cvc5-Linux-*` 或 `cvc5-*-*` 形式目录并使用其中的 `bin/cvc5`。
+
+### 方式三：使用系统或 conda 安装
 
 若系统或 conda 环境中已安装 cvc5 并加入 PATH，无需在 `external/cvc5` 下放置任何文件，本工具会直接使用 `cvc5` 命令。
 

@@ -355,8 +355,10 @@ private:
 // 调用 smt-switch 包装的可执行（https://github.com/stanford-centaur/smt-switch），需自行编译 external/smt-switch 下的解析器
 class SmtSwitchParser : public ExternalParser {
 public:
-    SmtSwitchParser(const std::string& path = "external/smt-switch/build/smt_switch_parser");
+    SmtSwitchParser(const std::string& path = "external/smt-switch");
     ParseResult parse(const std::string& filename) override;
+private:
+    std::string parser_exe_;  // 解析得到的 smt_switch_parser 可执行路径
 };
 
 

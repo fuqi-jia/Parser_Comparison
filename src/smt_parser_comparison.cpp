@@ -1176,6 +1176,20 @@ Cvc5Parser::Cvc5Parser(const std::string& path)
                 break;
             }
         }
+        if (cvc5_bin_.empty()) {
+            for (const auto& entry : fs::directory_iterator(base)) {
+                if (!entry.is_directory()) continue;
+                std::string name = entry.path().filename().string();
+                bool is_prebuilt = (name.find("cvc5-Linux") == 0 || name.find("cvc5-") == 0);
+                if (is_prebuilt) {
+                    fs::path cand = entry.path() / "bin" / "cvc5";
+                    if (fs::exists(cand) && fs::is_regular_file(cand)) {
+                        cvc5_bin_ = cand.string();
+                        break;
+                    }
+                }
+            }
+        }
     }
     if (cvc5_bin_.empty()) {
         if (fs::exists(base) && fs::is_regular_file(base))
@@ -1226,18 +1240,46 @@ SmtSwitchParser::SmtSwitchParser(const std::string& path)
           "1.0",
           "C++",
           {"SMT-LIB 2.6", "通用 SMT API", "https://github.com/stanford-centaur/smt-switch"}
-      ) {}
+      ),
+      parser_exe_("") {
+    namespace fs = std::filesystem;
+    fs::path base(path);
+    if (fs::exists(base) && fs::is_directory(base)) {
+        // 固定路径：build/smt_switch_parser（本仓库 CMake 或手动编译）
+        fs::path cand = base / "build" / "smt_switch_parser";
+        if (fs::exists(cand) && fs::is_regular_file(cand)) {
+            parser_exe_ = cand.string();
+        }
+        if (parser_exe_.empty()) {
+            // 发布目录：smt-switch-1.0.6/build/smt_switch_parser
+            for (const auto& entry : fs::directory_iterator(base)) {
+                if (!entry.is_directory()) continue;
+                std::string name = entry.path().filename().string();
+                if (name.find("smt-switch-") == 0) {
+                    cand = entry.path() / "build" / "smt_switch_parser";
+                    if (fs::exists(cand) && fs::is_regular_file(cand)) {
+                        parser_exe_ = cand.string();
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if (parser_exe_.empty() && fs::exists(base) && fs::is_regular_file(base))
+        parser_exe_ = path;
+}
 
 ParseResult SmtSwitchParser::parse(const std::string& filename) {
     ParseResult result;
-    if (parser_path.empty() || access(parser_path.c_str(), F_OK) != 0) {
+    std::string exe = parser_exe_.empty() ? parser_path : parser_exe_;
+    if (exe.empty() || access(exe.c_str(), F_OK) != 0) {
         result.success = false;
         result.result_code = ResultCode::UNKNOWN;
         result.errors.push_back("smt_switch_parser 可执行文件未找到，请参考 external/smt-switch/README.md 编译");
         return result;
     }
     std::string abs_path = std::filesystem::absolute(filename).string();
-    std::string cmd = parser_path + " \"" + abs_path + "\"";
+    std::string cmd = exe + " \"" + abs_path + "\"";
     ProcessRunResult pr = runExternalCommand(cmd);
     std::string output = pr.stdout_output;
     result.parse_time = pr.wall_time_ms;
