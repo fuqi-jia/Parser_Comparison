@@ -1,21 +1,14 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Parser benchmark 脚本：在 benchmark/non-incremental/ 下对所有 .smt2 跑所有 parser，
-限制解析超时 10 秒、可选内存上限；支持断点续跑与增量写表。
-
+Parser benchmark：对 .smt2 列表跑所有 parser，10s 超时、可选内存上限，断点续跑。
 用法:
-  cd /mnt/d/D_Study/ISCAS/projects/SMT/Parser_Comparison
-  python3 scripts/run_parser_benchmark.py                    # 10s 超时，4GB 内存上限
-  python3 scripts/run_parser_benchmark.py --memory-mb 2048  # 2GB 内存上限
-  python3 scripts/run_parser_benchmark.py --resume          # WSL 崩溃后再次运行，从 checkpoint 继续
-
-断点续跑：再次执行同一命令即可，会跳过 results/parser_benchmark_checkpoint.csv 中已有的 (file, parser)。
-若要重跑全部，请删除 results/parser_benchmark_checkpoint.csv 后再运行。
-输出表：results/parser_benchmark_table.csv（长表）、results/parser_benchmark_table_wide.csv（宽表，每例每 parser 三列 time_ms, memory_kb, ast_nodes）。
-若希望按理论分 log（避免单个 log 过大），可加 --log-dir results/logs，会生成 results/logs/QF_AX.log、results/logs/QF_BV.log 等。
+  python3 scripts/run_parser_benchmark.py --benchmark-dir benchmark/non-incremental/_test_one
+  python3 scripts/run_parser_benchmark.py --file-list results/file_list.txt --benchmark-dir benchmark/non-incremental
+  --file-list: 一行一个 .smt2 路径，不扫描目录（适合几十 G 的 benchmark）
+  --log-dir results/logs: 按理论分 log
+  PYTHONUNBUFFERED=1 nohup ... > results/benchmark_main.log 2>&1 &
 """
-
 from __future__ import print_function
 
 import os
@@ -28,12 +21,11 @@ import resource
 from pathlib import Path
 from datetime import datetime
 
-# 默认配置
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BENCHMARK_DIR = REPO_ROOT / "benchmark" / "non-incremental"
 BINARY_NAMES = ["smt_parser_comparison", "build/smt_parser_comparison"]
 PARSE_TIMEOUT_SEC = 10
-PROCESS_TIMEOUT_SEC = PARSE_TIMEOUT_SEC + 5  # 子进程硬超时
+PROCESS_TIMEOUT_SEC = PARSE_TIMEOUT_SEC + 5
 DEFAULT_MEMORY_MB = 4096
 CHECKPOINT_CSV = REPO_ROOT / "results" / "parser_benchmark_checkpoint.csv"
 TABLE_CSV = REPO_ROOT / "results" / "parser_benchmark_table.csv"
@@ -45,7 +37,6 @@ def find_binary():
         path = REPO_ROOT / name if not os.path.isabs(name) else Path(name)
         if path.is_file() and os.access(path, os.X_OK):
             return str(path)
-    # PATH
     import shutil
     if shutil.which("smt_parser_comparison"):
         return "smt_parser_comparison"
@@ -63,7 +54,6 @@ def get_parser_list(binary):
         )
         if out.returncode != 0:
             return None
-        # 格式: "- native (C++)" 等
         names = []
         for line in out.stdout.splitlines():
             m = re.match(r"^\s*-\s+(\S+)", line.strip())
@@ -74,20 +64,40 @@ def get_parser_list(binary):
         return None
 
 
+def load_file_list(path):
+    """按行读取路径，相对路径按 REPO_ROOT 解析。不做 is_file() 也不做 resolve()，避免 16 万次文件系统调用卡住。"""
+    path = Path(path).resolve()
+    if not path.is_file():
+        return None
+    files = []
+    root = REPO_ROOT.resolve()
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                p = Path(line)
+                if not p.is_absolute():
+                    p = root / p
+                files.append(str(p))
+    return sorted(files) if files else None
+
+
 def collect_smt2_files(benchmark_dir):
     if not benchmark_dir.is_dir():
         return []
     files = []
-    for p in benchmark_dir.rglob("*"):
-        if p.is_file() and p.suffix.lower() in (".smt2", ".smt", ".smtlib"):
-            files.append(str(p.resolve()))
+    suffix_ok = (".smt2", ".smt", ".smtlib")
+    for root, _, names in os.walk(benchmark_dir, topdown=True):
+        for name in names:
+            if name.lower().endswith(suffix_ok):
+                files.append(str((Path(root) / name).resolve()))
     return sorted(files)
 
 
 def load_checkpoint(path):
-    done = set()  # (file, parser)
+    done = set()
     rows = []
-    if not path.is_file():
+    if not path or not path.is_file():
         return done, rows
     try:
         with open(path, "r", encoding="utf-8", newline="") as f:
@@ -103,6 +113,8 @@ def load_checkpoint(path):
 
 
 def append_checkpoint(path, file_, parser, status, time_ms, memory_kb, ast_nodes):
+    if not path:
+        return
     write_header = not path.is_file()
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a", encoding="utf-8", newline="") as f:
@@ -117,10 +129,21 @@ def append_checkpoint(path, file_, parser, status, time_ms, memory_kb, ast_nodes
             pass
 
 
+def get_theory_from_path(file_path, benchmark_dir):
+    try:
+        p = Path(file_path).resolve()
+        b = Path(benchmark_dir).resolve()
+        try:
+            rel = p.relative_to(b)
+        except ValueError:
+            return "default"
+        return rel.parts[0] if rel.parts else "default"
+    except Exception:
+        return "default"
+
+
 def parse_test_output(stdout, stderr):
-    time_ms = ""
-    memory_kb = ""
-    ast_nodes = ""
+    time_ms = memory_kb = ast_nodes = ""
     status = "fail"
     for line in (stdout or "").splitlines():
         line = line.strip()
@@ -139,36 +162,23 @@ def parse_test_output(stdout, stderr):
 
 
 def run_one(binary, file_path, parser_name, timeout_sec, memory_mb):
+    if not os.path.isfile(file_path):
+        return "no_file", "", "", "文件不存在"
     cmd = [binary, "test", "--file", file_path, "--parser", parser_name, "--timeout", str(timeout_sec)]
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
     try:
         if memory_mb and memory_mb > 0 and os.name == "posix":
-            # 子进程内限制内存（仅 Linux/WSL）
             def set_limits():
                 try:
-                    limit = memory_mb * 1024 * 1024
-                    resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+                    resource.setrlimit(resource.RLIMIT_AS, (memory_mb * 1024 * 1024, memory_mb * 1024 * 1024))
                 except (ValueError, resource.error):
                     pass
-            proc = subprocess.run(
-                cmd,
-                cwd=str(REPO_ROOT),
-                capture_output=True,
-                text=True,
-                timeout=PROCESS_TIMEOUT_SEC,
-                env=env,
-                preexec_fn=set_limits,
-            )
+            proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True,
+                                  timeout=PROCESS_TIMEOUT_SEC, env=env, preexec_fn=set_limits)
         else:
-            proc = subprocess.run(
-                cmd,
-                cwd=str(REPO_ROOT),
-                capture_output=True,
-                text=True,
-                timeout=PROCESS_TIMEOUT_SEC,
-                env=env,
-            )
+            proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True,
+                                  timeout=PROCESS_TIMEOUT_SEC, env=env)
         status, time_ms, memory_kb, ast_nodes = parse_test_output(proc.stdout, proc.stderr)
         if proc.returncode != 0 and status == "ok":
             status = "fail"
@@ -182,107 +192,108 @@ def run_one(binary, file_path, parser_name, timeout_sec, memory_mb):
         return "error", "", "", str(e)[:200]
 
 
-def get_theory_from_path(file_path, benchmark_dir):
-    """从文件路径提取理论名，如 .../non-incremental/QF_AX/... -> QF_AX"""
-    try:
-        p = Path(file_path).resolve()
-        b = Path(benchmark_dir).resolve()
-        try:
-            rel = p.relative_to(b)
-        except ValueError:
-            return "default"
-        parts = rel.parts
-        return parts[0] if parts else "default"
-    except Exception:
-        return "default"
-
-
 def build_table_from_checkpoint(rows):
     if not rows:
         return [], []
     files = sorted({r["file"] for r in rows})
     parsers = sorted({r["parser"] for r in rows})
-    key = lambda r: (r["file"], r["parser"])
-    by_key = {key(r): r for r in rows}
-    # 长表
+    by_key = {(r["file"], r["parser"]): r for r in rows}
     long_header = ["file", "parser", "status", "time_ms", "memory_kb", "ast_nodes"]
     long_rows = [long_header]
     for f in files:
         for p in parsers:
             r = by_key.get((f, p), {})
-            long_rows.append([
-                f, p,
-                r.get("status", ""),
-                r.get("time_ms", ""),
-                r.get("memory_kb", ""),
-                r.get("ast_nodes", ""),
-            ])
-    # 宽表：每行一个 file，每 parser 三列 time_ms, memory_kb, ast_nodes
+            long_rows.append([f, p, r.get("status", ""), r.get("time_ms", ""), r.get("memory_kb", ""), r.get("ast_nodes", "")])
     wide_header = ["file"] + [f"{p}_time_ms" for p in parsers] + [f"{p}_memory_kb" for p in parsers] + [f"{p}_ast_nodes" for p in parsers]
     wide_rows = [wide_header]
     for f in files:
         row = [f]
         for p in parsers:
-            r = by_key.get((f, p), {})
-            row.append(r.get("time_ms", ""))
+            row.append(by_key.get((f, p), {}).get("time_ms", ""))
         for p in parsers:
-            r = by_key.get((f, p), {})
-            row.append(r.get("memory_kb", ""))
+            row.append(by_key.get((f, p), {}).get("memory_kb", ""))
         for p in parsers:
-            r = by_key.get((f, p), {})
-            row.append(r.get("ast_nodes", ""))
+            row.append(by_key.get((f, p), {}).get("ast_nodes", ""))
         wide_rows.append(row)
     return long_rows, wide_rows
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Parser benchmark with 10s timeout, optional memory limit, checkpoint/resume")
-    parser.add_argument("--benchmark-dir", type=Path, default=BENCHMARK_DIR, help="Root of benchmark .smt2 files")
-    parser.add_argument("--timeout", type=int, default=PARSE_TIMEOUT_SEC, help="Parse timeout in seconds")
-    parser.add_argument("--memory-mb", type=int, default=DEFAULT_MEMORY_MB, help="Memory limit in MB (0 = no limit)")
-    parser.add_argument("--resume", action="store_true", help="Resume from checkpoint, skip done (file, parser)")
-    parser.add_argument("--dry-run", action="store_true", help="Only list files and parsers, do not run")
-    parser.add_argument("--checkpoint", type=Path, default=CHECKPOINT_CSV, help="Checkpoint CSV path")
-    parser.add_argument("--table", type=Path, default=TABLE_CSV, help="Output long table CSV")
-    parser.add_argument("--table-wide", type=Path, default=TABLE_WIDE_CSV, help="Output wide table CSV")
-    parser.add_argument("--log-dir", type=Path, default=None, help="Per-theory log dir (e.g. results/logs -> QF_AX.log, QF_BV.log)")
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser(description="Parser benchmark, 10s timeout, checkpoint/resume")
+    ap.add_argument("--benchmark-dir", type=Path, default=BENCHMARK_DIR, help="Benchmark root (for scan or theory name)")
+    ap.add_argument("--file-list", type=Path, default=None, help="One path per line, no scan")
+    ap.add_argument("--timeout", type=int, default=PARSE_TIMEOUT_SEC)
+    ap.add_argument("--memory-mb", type=int, default=DEFAULT_MEMORY_MB)
+    ap.add_argument("--resume", action="store_true")
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--checkpoint", type=Path, default=CHECKPOINT_CSV)
+    ap.add_argument("--table", type=Path, default=TABLE_CSV)
+    ap.add_argument("--table-wide", type=Path, default=TABLE_WIDE_CSV)
+    ap.add_argument("--log-dir", type=Path, default=None)
+    args = ap.parse_args()
 
-    benchmark_dir = args.benchmark_dir.resolve()
+    def resolve_path(p):
+        if p is None:
+            return None
+        p = Path(p)
+        return p.resolve() if p.is_absolute() else (REPO_ROOT / p).resolve()
+
+    if args.log_dir:
+        args.log_dir = resolve_path(args.log_dir)
+    args.checkpoint = resolve_path(args.checkpoint)
+    args.table = resolve_path(args.table)
+    args.table_wide = resolve_path(args.table_wide)
+    benchmark_dir = resolve_path(args.benchmark_dir)
+
     binary = find_binary()
     if not binary:
-        print("错误: 未找到 smt_parser_comparison，请在项目根目录 build 或设置 PATH", file=sys.stderr)
-        sys.exit(1)
+        print("错误: 未找到 smt_parser_comparison", file=sys.stderr, flush=True)
+        return 1
+    print("binary: {}".format(binary), flush=True)
 
     parsers = get_parser_list(binary)
     if not parsers:
-        print("警告: 无法获取 parser 列表，使用默认列表", file=sys.stderr)
         parsers = ["native", "pysmt", "jsmtlib", "z3", "antlr4", "cvc5", "smt-switch"]
+        print("警告: 使用默认 parser 列表", file=sys.stderr)
+    print("parsers: {}".format(len(parsers)), flush=True)
 
-    files = collect_smt2_files(benchmark_dir)
-    if not files:
-        print("错误: 在 {} 下未找到 .smt2/.smt 文件".format(benchmark_dir), file=sys.stderr)
-        sys.exit(1)
+    if args.file_list:
+        args.file_list = resolve_path(args.file_list)
+        print("正在加载 file-list: {} ...".format(args.file_list), flush=True)
+        sys.stdout.flush()
+        sys.stderr.flush()
+        files = load_file_list(args.file_list)
+        if not files:
+            print("错误: --file-list 为空或文件不存在: {}".format(args.file_list), file=sys.stderr, flush=True)
+            return 1
+        print("从 file-list 加载 {} 个文件".format(len(files)), flush=True)
+    else:
+        if not benchmark_dir.is_dir():
+            print("错误: benchmark 目录不存在: {}".format(benchmark_dir), file=sys.stderr, flush=True)
+            return 1
+        files = collect_smt2_files(benchmark_dir)
+        if not files:
+            print("错误: 未找到 .smt2 文件: {}".format(benchmark_dir), file=sys.stderr, flush=True)
+            return 1
+        print("扫描得到 {} 个文件".format(len(files)), flush=True)
 
     done, checkpoint_rows = load_checkpoint(args.checkpoint)
     if args.resume and checkpoint_rows:
-        print("从 checkpoint 恢复，已完成 {} 条".format(len(checkpoint_rows)))
-
+        print("从 checkpoint 恢复，已完成 {} 条".format(len(checkpoint_rows)), flush=True)
     total = len(files) * len(parsers)
     todo = [(f, p) for f in files for p in parsers if (f, p) not in done]
-    print("benchmark 目录: {}".format(benchmark_dir))
-    print("文件数: {}  解析器: {}  总任务: {}  待跑: {}".format(len(files), len(parsers), total, len(todo)))
+    print("文件数: {}  解析器: {}  总任务: {}  待跑: {}".format(len(files), len(parsers), total, len(todo)), flush=True)
     if args.dry_run:
-        print("--dry-run: 不执行")
         return 0
 
     args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
     if args.log_dir:
         args.log_dir.mkdir(parents=True, exist_ok=True)
+    print("开始运行 {} 个任务（每完成一条会写 checkpoint 和 log）...".format(len(todo)), flush=True)
+    sys.stdout.flush()
+    sys.stderr.flush()
     for i, (file_path, parser_name) in enumerate(todo):
-        status, time_ms, memory_kb, ast_nodes = run_one(
-            binary, file_path, parser_name, args.timeout, args.memory_mb
-        )
+        status, time_ms, memory_kb, ast_nodes = run_one(binary, file_path, parser_name, args.timeout, args.memory_mb)
         append_checkpoint(args.checkpoint, file_path, parser_name, status, time_ms, memory_kb, ast_nodes)
         line = "[{}/{}] {} | {} -> {}  {} ms  {} KB  nodes={}".format(
             i + 1, len(todo), parser_name, Path(file_path).name[:40], status, time_ms, memory_kb, ast_nodes
@@ -295,22 +306,26 @@ def main():
                 with open(log_file, "a", encoding="utf-8") as lf:
                     lf.write(line + "\n")
                     lf.flush()
-            except Exception:
-                pass
+                    try:
+                        os.fsync(lf.fileno())
+                    except Exception:
+                        pass
+            except Exception as e:
+                print("警告: 无法写入 {}: {}".format(log_file, e), file=sys.stderr, flush=True)
 
-    # 重新加载完整 checkpoint 并写表
     _, all_rows = load_checkpoint(args.checkpoint)
     long_rows, wide_rows = build_table_from_checkpoint(all_rows)
     if long_rows:
         args.table.parent.mkdir(parents=True, exist_ok=True)
         with open(args.table, "w", encoding="utf-8", newline="") as f:
             csv.writer(f).writerows(long_rows)
-        print("长表已写: {}".format(args.table))
+        print("长表: {}".format(args.table), flush=True)
     if wide_rows:
+        args.table_wide.parent.mkdir(parents=True, exist_ok=True)
         with open(args.table_wide, "w", encoding="utf-8", newline="") as f:
             csv.writer(f).writerows(wide_rows)
-        print("宽表已写: {}".format(args.table_wide))
-    print("完成: {}".format(datetime.now().isoformat()))
+        print("宽表: {}".format(args.table_wide), flush=True)
+    print("完成: {}".format(datetime.now().isoformat()), flush=True)
     return 0
 
 
