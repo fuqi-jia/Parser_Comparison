@@ -1,0 +1,1 @@
+python3 scripts/sample_benchmarks.py --bench_dir benchmark --per_theory 200 --seed_string "SMTParser-benchmark-v1" --copy_files

@@ -6,7 +6,7 @@ Parser benchmark：对 .smt2 列表跑所有 parser，10s 超时、可选内存�
   python3 scripts/run_parser_benchmark.py --benchmark-dir benchmark/non-incremental/_test_one
   python3 scripts/run_parser_benchmark.py --file-list results/file_list.txt --benchmark-dir benchmark/non-incremental
   --file-list: 一行一个 .smt2 路径，不扫描目录（适合几十 G 的 benchmark）
-  --log-dir results/logs: 按理论分 log
+  --log-dir results/logs: 按理论分 log（仅若干 QF_*.log）。Java 崩溃转储统一写到 results/java_errors/
   PYTHONUNBUFFERED=1 nohup ... > results/benchmark_main.log 2>&1 &
 """
 from __future__ import print_function
@@ -30,7 +30,10 @@ DEFAULT_MEMORY_MB = 4096
 CHECKPOINT_CSV = REPO_ROOT / "results" / "parser_benchmark_checkpoint.csv"
 TABLE_CSV = REPO_ROOT / "results" / "parser_benchmark_table.csv"
 TABLE_WIDE_CSV = REPO_ROOT / "results" / "parser_benchmark_table_wide.csv"
-
+REPLAY_POSITION_FILE = REPO_ROOT / "results" / "replay_position.txt"
+REPLAY_INTERVAL = 1000
+# 说明: 本脚本每完成 REPLAY_INTERVAL 条任务会覆盖写入 results/replay_position.txt；
+# 项目根目录下的 replay_pid*.log 来自 Java/其他进程，非本脚本生成。
 
 def find_binary():
     for name in BINARY_NAMES:
@@ -65,7 +68,7 @@ def get_parser_list(binary):
 
 
 def load_file_list(path):
-    """按行读取路径，相对路径按 REPO_ROOT 解析。不做 is_file() 也不做 resolve()，避免 16 万次文件系统调用卡住。"""
+    """按行读取路径，相对路径按 REPO_ROOT 解析。保持与 file_list 行顺序一致，不排序。"""
     path = Path(path).resolve()
     if not path.is_file():
         return None
@@ -79,7 +82,7 @@ def load_file_list(path):
                 if not p.is_absolute():
                     p = root / p
                 files.append(str(p))
-    return sorted(files) if files else None
+    return files if files else None
 
 
 def collect_smt2_files(benchmark_dir):
@@ -167,11 +170,27 @@ def run_one(binary, file_path, parser_name, timeout_sec, memory_mb):
     cmd = [binary, "test", "--file", file_path, "--parser", parser_name, "--timeout", str(timeout_sec)]
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
+    # 4GB 地址空间时一律为所有子进程设置紧缩 JVM 参数，避免任一 Java parser 未命中列表仍 OOM；ErrorFile=/dev/null 避免写满磁盘
+    _java_opts = (
+        "-XX:ErrorFile=/dev/null "
+        "-Xmx768m -Xms64m "
+        "-XX:CompressedClassSpaceSize=128m "
+        "-XX:ReservedCodeCacheSize=32m "
+        "-XX:CICompilerCount=2"
+    )
+    if memory_mb and memory_mb <= 4096:
+        env["JAVA_TOOL_OPTIONS"] = _java_opts
+    else:
+        try:
+            env["JAVA_TOOL_OPTIONS"] = "-XX:ErrorFile=/dev/null"
+        except Exception:
+            pass
     try:
         if memory_mb and memory_mb > 0 and os.name == "posix":
             def set_limits():
                 try:
-                    resource.setrlimit(resource.RLIMIT_AS, (memory_mb * 1024 * 1024, memory_mb * 1024 * 1024))
+                    as_bytes = memory_mb * 1024 * 1024
+                    resource.setrlimit(resource.RLIMIT_AS, (as_bytes, as_bytes))
                 except (ValueError, resource.error):
                     pass
             proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True,
@@ -278,6 +297,8 @@ def main():
         print("扫描得到 {} 个文件".format(len(files)), flush=True)
 
     done, checkpoint_rows = load_checkpoint(args.checkpoint)
+    # checkpoint 即重启点：存的是已完成的 (file, parser)，续跑时跳过这些；表按 (file, parser) 聚合，与运行顺序无关
+    replay_path_resolved = resolve_path(REPLAY_POSITION_FILE)
     if args.resume and checkpoint_rows:
         print("从 checkpoint 恢复，已完成 {} 条".format(len(checkpoint_rows)), flush=True)
     total = len(files) * len(parsers)
@@ -312,6 +333,24 @@ def main():
                         pass
             except Exception as e:
                 print("警告: 无法写入 {}: {}".format(log_file, e), file=sys.stderr, flush=True)
+        # 每 1000 条写一次位置 replay，便于断点或查看进度（写入 results/replay_position.txt，非 replay_pid*.log）
+        if (i + 1) % REPLAY_INTERVAL == 0:
+            try:
+                replay_path = replay_path_resolved
+                replay_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(replay_path, "w", encoding="utf-8") as rf:
+                    rf.write("completed_count={}\n".format(i + 1))
+                    rf.write("total_todo={}\n".format(len(todo)))
+                    rf.write("last_file={}\n".format(file_path))
+                    rf.write("last_parser={}\n".format(parser_name))
+                    rf.write("timestamp={}\n".format(datetime.now().isoformat()))
+                    rf.flush()
+                    try:
+                        os.fsync(rf.fileno())
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
     _, all_rows = load_checkpoint(args.checkpoint)
     long_rows, wide_rows = build_table_from_checkpoint(all_rows)

@@ -57,6 +57,8 @@ install_manifest.txt
 
 # log
 *.log
+hs_err_pid*.log
+core.*
 
 # solvers
 z3-z3-4.15.2/
