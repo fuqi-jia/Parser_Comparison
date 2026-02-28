@@ -189,6 +189,7 @@ def run_sampling(
 
     for theory in theories:
         troot = theory_root(bench_dir, unpacked_subdir, theory)
+        logging.info("正在处理 theory: %s ...", theory)
         if not troot.is_dir():
             msg = f"Theory '{theory}': 未找到已解压目录 {troot}"
             if skip_missing:

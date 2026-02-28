@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # 一键编译 external 下所有 parser（各目录独立构建，失败不中断其余）
-# 用法: ./build_all_parsers.sh [external 目录，默认脚本所在目录]
+# 用法: ./scripts/build_all_parsers.sh [external 目录，默认 REPO_ROOT/external]
 # 可选环境变量:
 #   CVC5_HOME   - 编译 smt-switch 时需指向 cvc5 源码根目录
 #   USE_CLANG_LIBCXX - 设为 1 时，cvc5_parser 使用 clang -stdlib=libc++（适配 libcxx-static 预编译包）
 set -u
 
-EXTERNAL_ROOT="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+EXTERNAL_ROOT="${1:-$REPO_ROOT/external}"
 cd "$EXTERNAL_ROOT"
 NPROC="$(nproc 2>/dev/null || echo 1)"
 OK=()
@@ -138,7 +140,7 @@ build_smt_switch() {
             echo "[SKIP] smt-switch: 未设置 CVC5_HOME"
             echo "       需安装: bison, flex（Ubuntu/Debian: sudo apt install bison flex）"
             echo "       需设置: CVC5_HOME 指向 cvc5 源码根目录，或将 cvc5 预编译包解压到 $EXTERNAL_ROOT/cvc5/ 或将 cvc5 源码解压到 $EXTERNAL_ROOT/smt-switch/src/cvc5"
-            echo "       然后: CVC5_HOME=/path/to/cvc5 ./build_all_parsers.sh"
+            echo "       然后: CVC5_HOME=/path/to/cvc5 $SCRIPT_DIR/build_all_parsers.sh"
             SKIP+=("smt-switch")
             return
         fi
@@ -196,7 +198,7 @@ printf "  失败: %s — %s\n" "${#FAIL[@]}" "${FAIL[*]:-无}"
 printf "  跳过: %s — %s\n" "${#SKIP[@]}" "${SKIP[*]:-无}"
 echo "=============================================="
 echo "说明: pysmt / prolog-smtlib 为脚本或库，无需编译。"
-echo "      cvc5 预编译包为 libcxx 时需 clang++ 与 libc++，或: USE_CLANG_LIBCXX=1 ./build_all_parsers.sh"
+echo "      cvc5 预编译包为 libcxx 时需 clang++ 与 libc++，或: USE_CLANG_LIBCXX=1 $SCRIPT_DIR/build_all_parsers.sh"
 echo "      若被跳过："
 echo "        haskell-0.0.2 — 安装 GHC + Cabal（ghcup 或 apt install ghc cabal-install）及 alex（cabal install alex 或 apt install alex）"
 echo "        smt-switch    — 安装 bison/flex，并设置 CVC5_HOME 指向 cvc5 源码根目录"
