@@ -152,7 +152,8 @@ smt-switch-*/
 external/smt-switch/smt-switch-*/
 
 # results
-results/*
+!results/logs/*.log
+!results/logs_sampled/*.log
 results_failed/
 old_results/
 
