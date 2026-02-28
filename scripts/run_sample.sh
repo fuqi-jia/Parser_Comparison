@@ -44,7 +44,7 @@ python3 scripts/run_parser_benchmark.py \
     --table results/parser_benchmark_table_sampled.csv \
     --table-wide results/parser_benchmark_table_wide_sampled.csv \
     --log-dir results/logs_sampled \
-    "$@"
+    "$@" >> results/parser_benchmark_sampled.log 2>&1
 
 echo ""
 echo "完成。checkpoint: results/parser_benchmark_checkpoint_sampled.csv  表: results/parser_benchmark_table_sampled.csv"

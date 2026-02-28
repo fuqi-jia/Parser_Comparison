@@ -117,9 +117,9 @@ def parse_smt_file(filename):
         end_time = time.time()
         parse_time = (end_time - start_time) * 1000  # 转换为毫秒
         
-        # 计算内存使用
+        # 计算内存使用：与其它 parser 一致，上报进程峰值 RSS (ru_maxrss)，而非增量
         end_memory = get_memory_usage()
-        memory_usage = max(0, end_memory - start_memory)
+        memory_usage = end_memory
         
         # 计算AST节点数
         ast_node_count = 0

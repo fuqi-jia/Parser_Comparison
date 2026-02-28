@@ -30,10 +30,6 @@ DEFAULT_MEMORY_MB = 4096
 CHECKPOINT_CSV = REPO_ROOT / "results" / "parser_benchmark_checkpoint.csv"
 TABLE_CSV = REPO_ROOT / "results" / "parser_benchmark_table.csv"
 TABLE_WIDE_CSV = REPO_ROOT / "results" / "parser_benchmark_table_wide.csv"
-REPLAY_POSITION_FILE = REPO_ROOT / "results" / "replay_position.txt"
-REPLAY_INTERVAL = 1000
-# 说明: 本脚本每完成 REPLAY_INTERVAL 条任务会覆盖写入 results/replay_position.txt；
-# 项目根目录下的 replay_pid*.log 来自 Java/其他进程，非本脚本生成。
 
 def find_binary():
     for name in BINARY_NAMES:
@@ -298,7 +294,6 @@ def main():
 
     done, checkpoint_rows = load_checkpoint(args.checkpoint)
     # checkpoint 即重启点：存的是已完成的 (file, parser)，续跑时跳过这些；表按 (file, parser) 聚合，与运行顺序无关
-    replay_path_resolved = resolve_path(REPLAY_POSITION_FILE)
     if args.resume and checkpoint_rows:
         print("从 checkpoint 恢复，已完成 {} 条".format(len(checkpoint_rows)), flush=True)
     total = len(files) * len(parsers)
@@ -333,24 +328,6 @@ def main():
                         pass
             except Exception as e:
                 print("警告: 无法写入 {}: {}".format(log_file, e), file=sys.stderr, flush=True)
-        # 每 1000 条写一次位置 replay，便于断点或查看进度（写入 results/replay_position.txt，非 replay_pid*.log）
-        if (i + 1) % REPLAY_INTERVAL == 0:
-            try:
-                replay_path = replay_path_resolved
-                replay_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(replay_path, "w", encoding="utf-8") as rf:
-                    rf.write("completed_count={}\n".format(i + 1))
-                    rf.write("total_todo={}\n".format(len(todo)))
-                    rf.write("last_file={}\n".format(file_path))
-                    rf.write("last_parser={}\n".format(parser_name))
-                    rf.write("timestamp={}\n".format(datetime.now().isoformat()))
-                    rf.flush()
-                    try:
-                        os.fsync(rf.fileno())
-                    except Exception:
-                        pass
-            except Exception:
-                pass
 
     _, all_rows = load_checkpoint(args.checkpoint)
     long_rows, wide_rows = build_table_from_checkpoint(all_rows)
