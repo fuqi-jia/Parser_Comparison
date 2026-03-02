@@ -9,10 +9,14 @@ cd "$PROJECT_ROOT"
 
 RESUME=1
 ONLY_PARSER=""
+EXCLUDE_THEORY=()
+EXCLUDE_PARSER=()
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --fresh) RESUME=0; shift ;;
         --only-parser) ONLY_PARSER="${2:-}"; shift 2 ;;
+        --exclude-theory) EXCLUDE_THEORY+=("${2:-}"); shift 2 ;;
+        --exclude-parser) EXCLUDE_PARSER+=("${2:-}"); shift 2 ;;
         *) break ;;
     esac
 done
@@ -27,6 +31,8 @@ if [ ! -f "$FILE_LIST" ]; then
     echo "用法: $0 [--fresh] [--only-parser NAME] [file_list] [checkpoint] [recheck_out] [table] [output_dir]" >&2
     echo "  --fresh  从头开始（清空 recheck_out 再跑）；默认断点续跑" >&2
     echo "  --only-parser NAME  只重跑指定 parser（如 native）" >&2
+    echo "  --exclude-theory P:T  跳过 (parser,theory)，如 pysmt:QF_FP（可多次）" >&2
+    echo "  --exclude-parser NAME  不重跑指定 parser（可多次）" >&2
     exit 1
 fi
 if [ ! -f "$CHECKPOINT" ]; then
@@ -45,18 +51,27 @@ if [ "$RESUME" -eq 1 ] && [ -f "$RECHECK_OUT" ]; then
     echo "断点续跑: 将跳过已有记录"
 fi
 [ -n "$ONLY_PARSER" ] && echo "仅重跑 parser: $ONLY_PARSER"
+[ ${#EXCLUDE_THEORY[@]} -gt 0 ] && echo "排除 (parser,theory): ${EXCLUDE_THEORY[*]}"
+[ ${#EXCLUDE_PARSER[@]} -gt 0 ] && echo "排除 parser: ${EXCLUDE_PARSER[*]}"
 echo ""
 
 EXTRA="--only-fail"
 [ "$RESUME" -eq 1 ] && EXTRA="$EXTRA --resume"
 [ -n "$ONLY_PARSER" ] && EXTRA="$EXTRA --only-parser $ONLY_PARSER"
+for et in "${EXCLUDE_THEORY[@]}"; do
+    [ -n "$et" ] && EXTRA="$EXTRA --exclude-theory $et"
+done
+for p in "${EXCLUDE_PARSER[@]}"; do
+    [ -n "$p" ] && EXTRA="$EXTRA --exclude-parser $p"
+done
 
 python3 scripts/re_run_parser_benchmark.py \
     --file-list "$FILE_LIST" \
     --checkpoint "$CHECKPOINT" \
     --recheck-out "$RECHECK_OUT" \
+    --table "$TABLE" \
     $EXTRA
 
 echo ""
-echo "用重跑结果更新 summary（覆盖误判为 fail 的统计）:"
-echo "  python3 scripts/gen_summary_table.py --input $TABLE --update-from-recheck $RECHECK_OUT --output-dir $OUTPUT_DIR"
+echo "用主表重新生成 summary（重跑成功已写回主表，无需 recheck）:"
+python3 scripts/gen_summary_table.py --input "$TABLE" --output-dir "$OUTPUT_DIR"

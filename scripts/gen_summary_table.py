@@ -23,6 +23,7 @@ from __future__ import print_function
 import argparse
 import csv
 import re
+import statistics
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -50,8 +51,8 @@ def build_summary_rows(by_parser):
         if total == 0:
             continue
 
-        avg_time_ms = (
-            sum(r["time_ms"] for r in ok_list) / len(ok_list) if ok_list else None
+        median_time_ms = (
+            statistics.median(r["time_ms"] for r in ok_list) if ok_list else None
         )
         avg_memory_kb = (
             sum(r["memory_kb"] for r in ok_list) / len(ok_list) if ok_list else None
@@ -69,7 +70,7 @@ def build_summary_rows(by_parser):
             "ok": len(ok_list),
             "timeout": len(timeout_list),
             "fail": len(fail_list),
-            "avg_time_ms": round(avg_time_ms, 2) if avg_time_ms is not None else "",
+            "median_time_ms": round(median_time_ms, 2) if median_time_ms is not None else "",
             "avg_memory_kb": round(avg_memory_kb, 2) if avg_memory_kb is not None else "",
             "avg_ast_nodes": round(avg_ast_nodes, 2) if avg_ast_nodes is not None else "",
             "timeout_pct": round(timeout_pct, 2),
@@ -83,7 +84,7 @@ def write_table_csv(rows, path):
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = [
         "parser", "total", "ok", "timeout", "fail",
-        "avg_time_ms", "avg_memory_kb", "avg_ast_nodes",
+        "median_time_ms", "avg_memory_kb", "avg_ast_nodes",
         "timeout_pct", "fail_pct", "support_pct",
     ]
     with open(path, "w", newline="", encoding="utf-8") as f:
@@ -96,10 +97,10 @@ def write_table_csv(rows, path):
 def write_table_md(rows, path):
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        f.write("| Parser | 平均时间(ms) | 平均内存(kB) | 平均节点数 | 超时(%) | 非超时失败(%) | 支持率(%) |\n")
+        f.write("| Parser | 中位时间(ms) | 平均内存(kB) | 平均节点数 | 超时(%) | 非超时失败(%) | 成功率(%) |\n")
         f.write("|--------|-------------|--------------|------------|---------|----------------|----------|\n")
         for r in rows:
-            avg_t = r["avg_time_ms"] if r["avg_time_ms"] != "" else "-"
+            avg_t = r["median_time_ms"] if r["median_time_ms"] != "" else "-"
             avg_m = r["avg_memory_kb"] if r["avg_memory_kb"] != "" else "-"
             avg_n = r["avg_ast_nodes"] if r["avg_ast_nodes"] != "" else "-"
             f.write(

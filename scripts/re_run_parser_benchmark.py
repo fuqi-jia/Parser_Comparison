@@ -6,10 +6,10 @@
 
 支持两种模式：
 1. 全量重跑：对 file_list × parsers 全部再跑（默认）。
-2. 仅重跑原失败：--only-fail，仅对 checkpoint 中 status=fail 的 (file, parser) 重跑。
+2. 仅重跑原失败/超时：--only-fail，仅对 checkpoint 中 status=fail 或 timeout 的 (file, parser) 重跑。
 
 输出为「重跑结果」CSV，与 checkpoint 同构：file, parser, status, time_ms, memory_kb, ast_nodes。
-之后可用 gen_summary_table.py --update-from-recheck <本脚本输出> 将重跑结果合并回长表并重新生成 summary。
+若指定 --table，成功的结果会直接写回主表，recheck 只保留仍为 fail/timeout 的条目；summary 直接读主表即可，无需 --update-from-recheck。
 
 用法:
   python3 scripts/re_run_parser_benchmark.py --file-list benchmark/sampled/file_list.txt \\
@@ -32,6 +32,14 @@ from datetime import datetime
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BINARY_NAMES = ["smt_parser_comparison", "build/smt_parser_comparison"]
+
+# 从 file 路径提取理论：.../sampled/files/QF_AX/... -> QF_AX（与 gen_summary_table 一致）
+THEORY_PATTERN = re.compile(r"sampled/files/([^/]+)/")
+
+
+def extract_theory(file_path):
+    m = THEORY_PATTERN.search(str(file_path))
+    return m.group(1) if m else "unknown"
 WRAPPER_NAMES = ["build/smt_parser_wrapper", "smt_parser_wrapper"]
 PARSE_TIMEOUT_SEC = 10
 PROCESS_TIMEOUT_SEC = PARSE_TIMEOUT_SEC + 5
@@ -251,10 +259,14 @@ def main():
     )
     ap.add_argument("--file-list", type=Path, required=True, help="一行一个 .smt2 路径（如 benchmark/sampled/file_list.txt）")
     ap.add_argument("--checkpoint", type=Path, default=None, help="现有 checkpoint，用于 --only-fail 时筛选待重跑对；全量重跑时可选")
-    ap.add_argument("--recheck-out", type=Path, default=None, help="输出重跑结果 CSV（默认 results/parser_benchmark_recheck_sampled.csv）")
+    ap.add_argument("--recheck-out", type=Path, default=None, help="输出重跑结果 CSV（默认 results/parser_benchmark_recheck_sampled.csv）；仅 fail/timeout 会写入，成功的写回主表")
+    ap.add_argument("--table", type=Path, default=None, help="主表 CSV 路径；若指定，每条重跑结果会直接更新主表对应行，成功的不再写入 recheck")
     ap.add_argument("--only-fail", action="store_true", help="仅重跑 checkpoint 中 status=fail 或 timeout 的 (file, parser)，用于纠正误判")
     ap.add_argument("--only-parser", type=str, action="append", default=None, metavar="NAME", help="只重跑指定 parser（可多次指定，如 --only-parser native）；不指定则重跑全部 parser")
+    ap.add_argument("--exclude-parser", type=str, action="append", default=None, metavar="NAME", help="排除指定 parser（可多次指定，如 --exclude-parser native）")
     ap.add_argument("--resume", action="store_true", help="断点续跑：若 recheck-out 已存在则跳过已有 (file,parser)，只跑未完成的并追加写入")
+    ap.add_argument("--exclude-theory", type=str, action="append", default=None, metavar="PARSER:THEORY",
+                    help="跳过指定 (parser, theory)，如 pysmt:QF_FP、smt-switch:QF_AX；可多次指定（已知不支持的组合不重跑）")
     ap.add_argument("--timeout", type=int, default=PARSE_TIMEOUT_SEC)
     ap.add_argument("--memory-mb", type=int, default=DEFAULT_MEMORY_MB)
     ap.add_argument("--dry-run", action="store_true")
@@ -269,6 +281,7 @@ def main():
     args.file_list = resolve_path(args.file_list)
     args.checkpoint = resolve_path(args.checkpoint)
     args.recheck_out = resolve_path(args.recheck_out) or (REPO_ROOT / "results" / "parser_benchmark_recheck_sampled.csv")
+    args.table = resolve_path(args.table) if args.table else None
 
     binary = find_binary()
     if not binary:
@@ -279,13 +292,21 @@ def main():
         all_parsers = ["native", "pysmt", "jsmtlib", "z3", "antlr4", "cvc5", "smt-switch"]
         print("警告: 使用默认 parser 列表", file=sys.stderr)
     if args.only_parser:
-        parsers = [p for p in args.only_parser if p in all_parsers]
+        parsers = [p for p in args.only_parser if (p or "").strip() in all_parsers]
         if not parsers:
             print("错误: --only-parser 指定的 parser 不在列表中: {}".format(args.only_parser), file=sys.stderr, flush=True)
             return 1
         print("仅重跑 parser: {}".format(parsers), flush=True)
     else:
-        parsers = all_parsers
+        parsers = list(all_parsers)
+    if args.exclude_parser:
+        exclude_set = {p.strip() for p in args.exclude_parser if (p or "").strip()}
+        parsers = [p for p in parsers if p not in exclude_set]
+        if exclude_set:
+            print("已排除 parser: {}".format(sorted(exclude_set)), flush=True)
+    if not parsers:
+        print("错误: 排除后无可用 parser", file=sys.stderr, flush=True)
+        return 1
     files = load_file_list(args.file_list)
     if not files:
         print("错误: --file-list 为空或文件不存在: {}".format(args.file_list), file=sys.stderr, flush=True)
@@ -299,12 +320,31 @@ def main():
         # 重跑 fail 和 timeout，纠正误判（如首行非 JSON 导致 fail、提示里的「超时」导致误判 timeout）
         fail_or_timeout = {(r["file"], r["parser"]) for r in checkpoint_rows if (r.get("status") or "").strip().lower() in ("fail", "timeout")}
         todo = [(f, p) for f in files for p in parsers if (f, p) in fail_or_timeout]
-        print("仅重跑原 fail/timeout: {} 条（来自 checkpoint）".format(len(todo)), flush=True)
+        # 当前 parsers 下的 fail/timeout 条数（与 len(todo) 一致）
+        parsers_set = set(parsers)
+        n_fail = sum(1 for r in checkpoint_rows if (r.get("status") or "").strip().lower() == "fail" and (r.get("parser") or "").strip() in parsers_set)
+        n_timeout = sum(1 for r in checkpoint_rows if (r.get("status") or "").strip().lower() == "timeout" and (r.get("parser") or "").strip() in parsers_set)
+        print("仅重跑原 fail/timeout: {} 条（来自 checkpoint，其中 fail {} 条、timeout {} 条）".format(
+            len(todo), n_fail, n_timeout), flush=True)
     else:
         todo = [(f, p) for f in files for p in parsers]
         print("全量重跑: {} 文件 × {} 解析器 = {} 条".format(len(files), len(parsers), len(todo)), flush=True)
 
+    # 已知不支持的 (parser, theory) 不重跑
+    exclude_parser_theory = set()
+    if args.exclude_theory:
+        for s in args.exclude_theory:
+            s = (s or "").strip()
+            if ":" in s:
+                pp, tt = s.split(":", 1)
+                exclude_parser_theory.add((pp.strip(), tt.strip()))
+        if exclude_parser_theory:
+            n_before = len(todo)
+            todo = [(f, p) for f, p in todo if (p, extract_theory(f)) not in exclude_parser_theory]
+            print("已排除已知不支持 (parser,theory): {} 条，待跑 {} 条".format(n_before - len(todo), len(todo)), flush=True)
+
     # 断点续跑：从已有 recheck 文件加载已完成的 (file, parser)，只跑未完成的
+    # 若指定了 --only-parser，则该 parser 的条目不因 recheck 已有而跳过，强制重跑（便于纠正仍 timeout/fail 的个案）
     done_recheck = set()
     if args.resume and args.recheck_out.exists():
         try:
@@ -316,8 +356,16 @@ def main():
         except Exception:
             pass
         if done_recheck:
-            todo = [(f, p) for f, p in todo if (f, p) not in done_recheck]
-            print("断点续跑: 已跳过 {} 条，待跑 {} 条".format(len(done_recheck), len(todo)), flush=True)
+            only_parser_set = set(args.only_parser) if args.only_parser else set()
+            if only_parser_set:
+                todo = [(f, p) for f, p in todo if (f, p) not in done_recheck or p in only_parser_set]
+                print("断点续跑: 已跳过 {} 条（本次 parser {} 强制重跑，不跳过）".format(len(done_recheck), list(only_parser_set)), flush=True)
+                print("待跑 {} 条".format(len(todo)), flush=True)
+            else:
+                todo = [(f, p) for f, p in todo if (f, p) not in done_recheck]
+                print("断点续跑: 已跳过 {} 条，待跑 {} 条".format(len(done_recheck), len(todo)), flush=True)
+                if len(todo) == 0 and args.only_fail:
+                    print("（recheck 中已包含本轮全部 fail/timeout，故无需重跑）", flush=True)
 
     if args.dry_run:
         print("dry-run: 将运行 {} 条".format(len(todo)), flush=True)
@@ -326,7 +374,22 @@ def main():
         print("待跑 0 条（已全部完成），无需重跑。", flush=True)
         return 0
 
+    # 若指定 --table，预加载主表，重跑结果直接写回主表；成功的不再写入 recheck
+    table_rows = None
+    table_fieldnames = None
+    if args.table and args.table.exists():
+        try:
+            with open(args.table, "r", encoding="utf-8", newline="") as f:
+                r = csv.DictReader(f)
+                table_fieldnames = r.fieldnames
+                table_rows = list(r)
+            print("已加载主表 {} 行，重跑成功将直接写回主表".format(len(table_rows)), flush=True)
+        except Exception as e:
+            print("警告: 无法加载主表 {}，将不写回: {}".format(args.table, e), file=sys.stderr, flush=True)
+            table_rows = None
+
     args.recheck_out.parent.mkdir(parents=True, exist_ok=True)
+    recheck_fieldnames = ["file", "parser", "status", "time_ms", "memory_kb", "ast_nodes"]
     # 若只重跑部分 parser 且 recheck 已存在：保留“非本次要跑”的行，只删除并重跑 todo 中的 (file,parser)
     todo_set = set(todo)
     if args.only_parser and args.recheck_out.exists():
@@ -341,7 +404,7 @@ def main():
         except Exception:
             kept = []
         with open(args.recheck_out, "w", encoding="utf-8", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=["file", "parser", "status", "time_ms", "memory_kb", "ast_nodes"])
+            w = csv.DictWriter(f, fieldnames=recheck_fieldnames)
             w.writeheader()
             w.writerows(kept)
         if kept:
@@ -349,18 +412,57 @@ def main():
     # 若未续跑且未做“保留”则先写表头；续跑则直接追加
     elif not (args.resume and args.recheck_out.exists()):
         with open(args.recheck_out, "w", encoding="utf-8", newline="") as f:
-            csv.writer(f).writerow(["file", "parser", "status", "time_ms", "memory_kb", "ast_nodes"])
+            csv.writer(f).writerow(recheck_fieldnames)
+
+    table_key_to_index = None
+    if table_rows is not None and table_fieldnames:
+        table_key_to_index = {}
+        for idx, row in enumerate(table_rows):
+            f = (row.get("file") or "").strip()
+            p = (row.get("parser") or "").strip()
+            if f and p:
+                try:
+                    f = str(Path(f).resolve())
+                except Exception:
+                    pass
+                table_key_to_index[(f, p)] = idx
+
     for i, (file_path, parser_name) in enumerate(todo):
         status, time_ms, memory_kb, ast_nodes = run_one(binary, file_path, parser_name, args.timeout, args.memory_mb)
-        with open(args.recheck_out, "a", encoding="utf-8", newline="") as f:
-            csv.writer(f).writerow([file_path, parser_name, status, time_ms, memory_kb, ast_nodes])
-            f.flush()
+        # 直接更新主表对应行
+        if table_key_to_index is not None:
+            path_str = str(Path(file_path).resolve()) if file_path else ""
+            key = (path_str, (parser_name or "").strip())
+            if key in table_key_to_index:
+                row = table_rows[table_key_to_index[key]]
+                row["status"] = str(status) if status else ""
+                row["time_ms"] = str(time_ms) if time_ms not in (None, "") else ""
+                row["memory_kb"] = str(memory_kb) if memory_kb not in (None, "") else ""
+                row["ast_nodes"] = str(ast_nodes) if ast_nodes not in (None, "") else ""
+        # 仅 fail/timeout 写入 recheck，成功的不再保存到 recheck
+        if (status or "").strip().lower() not in ("ok",):
+            with open(args.recheck_out, "a", encoding="utf-8", newline="") as f:
+                csv.writer(f).writerow([file_path, parser_name, status, time_ms, memory_kb, ast_nodes])
+                f.flush()
         print("[{}/{}] {} | {} -> {}  {} ms  {} KB  nodes={}".format(
             len(done_recheck) + i + 1, len(done_recheck) + len(todo), parser_name, Path(file_path).name[:40], status, time_ms, memory_kb, ast_nodes
         ), flush=True)
 
-    print("重跑结果已写入: {}".format(args.recheck_out), flush=True)
-    print("可用: python3 scripts/gen_summary_table.py --input results/parser_benchmark_table_sampled.csv --update-from-recheck {} --output-dir results/summary".format(args.recheck_out), flush=True)
+    if table_rows is not None and table_fieldnames and args.table:
+        try:
+            with open(args.table, "w", encoding="utf-8", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=table_fieldnames)
+                w.writeheader()
+                w.writerows(table_rows)
+            print("主表已更新: {}".format(args.table), flush=True)
+        except Exception as e:
+            print("错误: 写回主表失败: {}".format(e), file=sys.stderr, flush=True)
+
+    print("重跑结果：成功已写回主表，仍 fail/timeout 的已追加到 {}".format(args.recheck_out), flush=True)
+    if args.table:
+        print("可用: python3 scripts/gen_summary_table.py --input {} --output-dir results/summary".format(args.table), flush=True)
+    else:
+        print("可用: python3 scripts/gen_summary_table.py --input results/parser_benchmark_table_sampled.csv --update-from-recheck {} --output-dir results/summary".format(args.recheck_out), flush=True)
     print("完成: {}".format(datetime.now().isoformat()), flush=True)
     return 0
 

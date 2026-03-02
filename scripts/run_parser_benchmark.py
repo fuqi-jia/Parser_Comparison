@@ -256,6 +256,8 @@ def main():
     ap.add_argument("--table", type=Path, default=TABLE_CSV)
     ap.add_argument("--table-wide", type=Path, default=TABLE_WIDE_CSV)
     ap.add_argument("--log-dir", type=Path, default=None)
+    ap.add_argument("--exclude-parser", type=str, action="append", default=None, metavar="NAME",
+                    help="排除指定 parser，不参与 benchmark（可多次指定，如 --exclude-parser native）")
     args = ap.parse_args()
 
     def resolve_path(p):
@@ -281,6 +283,14 @@ def main():
     if not parsers:
         parsers = ["native", "pysmt", "jsmtlib", "z3", "antlr4", "cvc5", "smt-switch"]
         print("警告: 使用默认 parser 列表", file=sys.stderr)
+    if args.exclude_parser:
+        exclude_set = {p.strip() for p in args.exclude_parser if (p or "").strip()}
+        parsers = [p for p in parsers if p not in exclude_set]
+        if exclude_set:
+            print("已排除 parser: {}".format(sorted(exclude_set)), flush=True)
+    if not parsers:
+        print("错误: 排除后无可用 parser", file=sys.stderr, flush=True)
+        return 1
     print("parsers: {}".format(len(parsers)), flush=True)
 
     if args.file_list:
