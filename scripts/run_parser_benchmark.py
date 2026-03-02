@@ -144,10 +144,16 @@ def get_theory_from_path(file_path, benchmark_dir):
 def parse_test_output(stdout, stderr):
     time_ms = memory_kb = ast_nodes = ""
     status = "fail"
-    for line in (stdout or "").splitlines():
+    text = (stdout or "") + "\n" + (stderr or "")
+    for line in text.splitlines():
         line = line.strip()
         if "解析状态:" in line or "结果:" in line:
-            status = "ok" if "成功" in line else "fail"
+            if "成功" in line:
+                status = "ok"
+            elif "超时" in line:
+                status = "timeout"
+            else:
+                status = "fail"
         m = re.search(r"解析时间:\s*([\d.]+)\s*ms", line)
         if m:
             time_ms = m.group(1)
@@ -157,6 +163,11 @@ def parse_test_output(stdout, stderr):
         m = re.search(r"AST节点数(?:量)?:\s*(\d+)", line)
         if m:
             ast_nodes = m.group(1)
+    # 仅当明确是「命令执行超时」时才标为 timeout，避免被首行 "(超时: 10秒)" 误判
+    if status != "timeout" and "命令执行超时" in text:
+        status = "timeout"
+        if not time_ms:
+            time_ms = str(PARSE_TIMEOUT_SEC * 1000)
     return status, time_ms, memory_kb, ast_nodes
 
 
@@ -197,7 +208,7 @@ def run_one(binary, file_path, parser_name, timeout_sec, memory_mb):
         status, time_ms, memory_kb, ast_nodes = parse_test_output(proc.stdout, proc.stderr)
         if proc.returncode != 0 and status == "ok":
             status = "fail"
-        if not time_ms and "超时" in (proc.stderr or "") + (proc.stdout or ""):
+        if not time_ms and "命令执行超时" in (proc.stderr or "") + (proc.stdout or ""):
             status = "timeout"
             time_ms = str(timeout_sec * 1000)
         return status, time_ms or "", memory_kb or "", ast_nodes or ""

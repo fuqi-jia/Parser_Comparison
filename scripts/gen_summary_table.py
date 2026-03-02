@@ -12,6 +12,10 @@
 用法:
   python3 scripts/gen_summary_table.py
   python3 scripts/gen_summary_table.py --input results/parser_benchmark_table_sampled.csv --output-dir results
+
+弥补误判（用重跑结果更新长表后再生成 summary）:
+  python3 scripts/gen_summary_table.py --input results/parser_benchmark_table_sampled.csv \\
+      --update-from-recheck results/parser_benchmark_recheck_sampled.csv --output-dir results/summary
 """
 
 from __future__ import print_function
@@ -126,37 +130,62 @@ def main():
         action="store_true",
         help="不生成 Markdown 文件，仅生成 CSV",
     )
+    ap.add_argument(
+        "--update-from-recheck",
+        type=Path,
+        default=None,
+        help="重跑结果 CSV（与 checkpoint 同构）：用其中 (file, parser) 覆盖 input 长表对应行后再生成 summary，用于纠正误判",
+    )
     args = ap.parse_args()
 
     if not args.input.exists():
         print("错误: 输入文件不存在:", args.input, file=__import__("sys").stderr)
         raise SystemExit(1)
 
+    # 读取长表
+    input_rows = []
+    with open(args.input, newline="", encoding="utf-8") as f:
+        input_rows = list(csv.DictReader(f))
+
+    # 若指定了重跑结果，用其覆盖长表中对应 (file, parser)
+    if args.update_from_recheck is not None and args.update_from_recheck.exists():
+        recheck_dict = {}
+        with open(args.update_from_recheck, newline="", encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                key = (row.get("file", ""), row.get("parser", ""))
+                if key[0] and key[1]:
+                    recheck_dict[key] = row
+        replaced = 0
+        for i, row in enumerate(input_rows):
+            key = (row.get("file", ""), row.get("parser", ""))
+            if key in recheck_dict:
+                input_rows[i] = recheck_dict[key]
+                replaced += 1
+        print("已用重跑结果覆盖 {} 条记录（来自 {}）".format(replaced, args.update_from_recheck))
+
     # 按 (理论, parser) 分组：by_theory[theory][parser] = { ok, timeout, fail }
     by_theory = {}
-    with open(args.input, newline="", encoding="utf-8") as f:
-        r = csv.DictReader(f)
-        for row in r:
-            theory = extract_theory(row["file"])
-            parser = row["parser"]
-            if theory not in by_theory:
-                by_theory[theory] = {}
-            if parser not in by_theory[theory]:
-                by_theory[theory][parser] = {"ok": [], "timeout": [], "fail": []}
-            status = row["status"].strip().lower()
-            try:
-                time_ms = float(row["time_ms"])
-                memory_kb = float(row["memory_kb"])
-                ast_nodes = int(row["ast_nodes"]) if row["ast_nodes"].strip() else 0
-            except (ValueError, KeyError):
-                time_ms, memory_kb, ast_nodes = 0.0, 0.0, 0
-            rec = {"time_ms": time_ms, "memory_kb": memory_kb, "ast_nodes": ast_nodes}
-            if status == "ok":
-                by_theory[theory][parser]["ok"].append(rec)
-            elif status == "timeout":
-                by_theory[theory][parser]["timeout"].append(rec)
-            else:
-                by_theory[theory][parser]["fail"].append(rec)
+    for row in input_rows:
+        theory = extract_theory(row["file"])
+        parser = row["parser"]
+        if theory not in by_theory:
+            by_theory[theory] = {}
+        if parser not in by_theory[theory]:
+            by_theory[theory][parser] = {"ok": [], "timeout": [], "fail": []}
+        status = (row.get("status") or "").strip().lower()
+        try:
+            time_ms = float(row.get("time_ms") or 0)
+            memory_kb = float(row.get("memory_kb") or 0)
+            ast_nodes = int(row["ast_nodes"]) if (row.get("ast_nodes") or "").strip() else 0
+        except (ValueError, KeyError):
+            time_ms, memory_kb, ast_nodes = 0.0, 0.0, 0
+        rec = {"time_ms": time_ms, "memory_kb": memory_kb, "ast_nodes": ast_nodes}
+        if status == "ok":
+            by_theory[theory][parser]["ok"].append(rec)
+        elif status == "timeout":
+            by_theory[theory][parser]["timeout"].append(rec)
+        else:
+            by_theory[theory][parser]["fail"].append(rec)
 
     # 每个理论生成一张表
     for theory in sorted(by_theory.keys()):

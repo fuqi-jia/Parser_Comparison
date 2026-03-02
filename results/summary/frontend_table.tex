@@ -1,0 +1,72 @@
+\begin{table*}[hp]
+\centering
+\caption{Front-end performance comparison (solving disabled).
+Time in ms, RSS in MB, timeout/failure in \%, and structural size in median node count.}
+\label{tab:frontend-all}
+\small
+\begin{tabular}{lccccccc}
+\toprule
+\textbf{Theory} & \textbf{Z3} & \textbf{cvc5} & \textbf{smt-sw} & \textbf{pysmt} & \textbf{ANT4} & \textbf{jSMT} & \textbf{\textsc{SMTParser}} \\
+\midrule
+
+\multicolumn{8}{c}{\textbf{Parsing Time (ms)}} \\
+\midrule
+QF\_AX  & \underline{114.08} & 204.23 & - & \textbf{45.39} & 1625.96 & 2943.01 & 223.03 \\
+QF\_BV  & \textbf{227.55} & 805.12 & 1086.99 & 535.99 & 1072.44 & 1875.63 & \underline{343.83} \\
+QF\_FP  & \textbf{13.89} & 47.11 & - & - & 421.26 & 1093.47 & \underline{22.68} \\
+QF\_LIA  & \textbf{292.77} & 928.36 & 989.75 & 682.81 & 2168.05 & 2721.58 & \underline{442.26} \\
+QF\_LRA  & \underline{645.3} & 789.68 & 1092.63 & 1065.03 & 1599.21 & 2308.08 & \textbf{622.08} \\
+QF\_NIA  & \textbf{204.46} & 2330.83 & 1722.55 & \underline{381.89} & 1743.25 & 2682.86 & 384.2 \\
+QF\_NRA  & \textbf{97.77} & \underline{160.53} & 236.15 & 311.15 & 1560.45 & 2530.29 & 298.03 \\
+QF\_S  & \underline{27.37} & 160.28 & 463.93 & \textbf{26.43} & 936.41 & 1831.29 & 44.82 \\
+\midrule
+
+\multicolumn{8}{c}{\textbf{Peak RSS (MB)}} \\
+\midrule
+QF\_AX  & 7.65 & 18.86 & - & 21.17 & \underline{5.47} & \textbf{2.77} & 16.99 \\
+QF\_BV  & \underline{17.25} & 56.65 & 59.86 & 30.86 & 24.7 & \textbf{7.32} & 26.57 \\
+QF\_FP  & 7.62 & 14.62 & - & - & \underline{4} & \textbf{2} & 16.76 \\
+QF\_LIA  & \underline{14.11} & 24.66 & 25.56 & 25 & 20.58 & \textbf{7.99} & 21.41 \\
+QF\_LRA  & \underline{19.43} & 23.36 & 32.21 & 26.66 & 69.47 & \textbf{11.54} & 26.25 \\
+QF\_NIA  & \underline{9.68} & 26.19 & 29.39 & 22.39 & 14.19 & \textbf{6.35} & 19.45 \\
+QF\_NRA  & \underline{10.02} & 17.8 & 20.49 & 22.2 & 17.95 & \textbf{4.83} & 19.39 \\
+QF\_S  & 7.67 & 23.74 & 47.69 & 21.26 & \underline{4.39} & \textbf{2.02} & 16.87 \\
+\midrule
+
+\multicolumn{8}{c}{\textbf{Timeout Rate (\%)}} \\
+\midrule
+QF\_AX  & \underline{0.5} & 5.5 & \textbf{0} & \textbf{0} & \textbf{0} & \textbf{0} & \textbf{0} \\
+QF\_BV  & 5 & 14 & 13.5 & 2 & \underline{0.5} & 1.5 & \textbf{0} \\
+QF\_FP  & \textbf{0} & \textbf{0} & \textbf{0} & \textbf{0} & \textbf{0} & \textbf{0} & \textbf{0} \\
+QF\_LIA  & \underline{2} & 39.5 & 38.5 & \underline{2} & \textbf{0} & 5 & \textbf{0} \\
+QF\_LRA  & 2 & 37 & 25 & 8 & 2.5 & \underline{1.5} & \textbf{0} \\
+QF\_NIA  & 2 & 69 & 69 & 3 & \underline{1} & 1.5 & \textbf{0} \\
+QF\_NRA  & \underline{1.5} & 15 & 12 & \underline{1.5} & \textbf{0} & \textbf{0} & \textbf{0} \\
+QF\_S  & \underline{0.5} & 12.5 & 2.5 & \textbf{0} & \textbf{0} & \textbf{0} & \textbf{0} \\
+\midrule
+
+\multicolumn{8}{c}{\textbf{Parsing Failure Rate (\%)}} \\
+\midrule
+QF\_AX  & \textbf{0} & \textbf{0} & \underline{100} & \textbf{0} & \textbf{0} & \textbf{0} & \textbf{0} \\
+QF\_BV  & \textbf{0} & \textbf{0} & \textbf{0} & \underline{0.5} & 5.5 & \textbf{0} & \textbf{0} \\
+QF\_FP  & \textbf{0} & \textbf{0} & \underline{100} & \underline{100} & \textbf{0} & \textbf{0} & \textbf{0} \\
+QF\_LIA  & \textbf{0} & \textbf{0} & \textbf{0} & \underline{0.5} & 1 & \textbf{0} & \textbf{0} \\
+QF\_LRA  & \textbf{0} & \textbf{0} & 41 & \textbf{0} & \underline{2} & \textbf{0} & \textbf{0} \\
+QF\_NIA  & \textbf{0} & \textbf{0} & \textbf{0} & \underline{1} & \textbf{0} & \textbf{0} & \textbf{0} \\
+QF\_NRA  & \textbf{0} & \textbf{0} & 10.5 & \textbf{0} & \underline{1} & \textbf{0} & \textbf{0} \\
+QF\_S  & \textbf{0} & \textbf{0} & 80.5 & 95.5 & \textbf{0} & \underline{68} & \textbf{0} \\
+\midrule
+
+\multicolumn{8}{c}{\textbf{Structural Size (nodes)}} \\
+\midrule
+QF\_AX  & 1318.78 & 728.79 & - & \underline{697.79} & 12445.75 & 1695.15 & \textbf{675.04} \\
+QF\_BV  & 15109.47 & 13934.03 & 17782.04 & \underline{12823.99} & 199209.82 & \textbf{10458.39} & 22998.88 \\
+QF\_FP  & 21.54 & \textbf{10.88} & - & - & 284.85 & 35.66 & \underline{16.32} \\
+QF\_LIA  & 13343.14 & \textbf{2810.24} & \underline{6010.46} & 9662.54 & 158765.37 & 8226.34 & 10033.14 \\
+QF\_LRA  & 36489.57 & \textbf{2430.89} & \underline{11656.37} & 14362.41 & 593910.73 & 53405.97 & 21331.73 \\
+QF\_NIA  & 9964.52 & \textbf{1326.21} & \underline{2296.4} & 3666.58 & 95628.03 & 8010.54 & 5481.01 \\
+QF\_NRA  & 6294.21 & \textbf{551.34} & \underline{852.67} & 2790.96 & 127428.92 & 9182.5 & 4899.15 \\
+QF\_S  & 110.59 & \underline{61.71} & 88.21 & 212.44 & 1054.79 & 124.17 & \textbf{60.66} \\
+\bottomrule
+\end{tabular}
+\end{table*}

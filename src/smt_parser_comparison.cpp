@@ -174,7 +174,9 @@ ParseResult NativeParser::parse(const std::string& filename) {
         
         // 解析JSON输出
         try {
-            SimpleJson::Value json = SimpleJson::Parser::parse(output);
+            std::string jsonStr = SimpleJson::extractFirstJsonObject(output);
+            if (jsonStr.empty()) jsonStr = output;
+            SimpleJson::Value json = SimpleJson::Parser::parse(jsonStr);
             
             // 填充结果结构
             result.success = json["success"].getBool();
@@ -265,7 +267,9 @@ ParseResult PySMTParser::parse(const std::string& filename) {
         
         // 解析JSON输出
         try {
-            SimpleJson::Value json = SimpleJson::Parser::parse(output);
+            std::string jsonStr = SimpleJson::extractFirstJsonObject(output);
+            if (jsonStr.empty()) jsonStr = output;
+            SimpleJson::Value json = SimpleJson::Parser::parse(jsonStr);
             
             // 填充结果结构
             result.success = json["success"].getBool();
@@ -339,7 +343,9 @@ ParseResult JSMTLIBParser::parse(const std::string& filename) {
     }
     
     try {
-        SimpleJson::Value json = SimpleJson::Parser::parse(output);
+        std::string jsonStr = SimpleJson::extractFirstJsonObject(output);
+        if (jsonStr.empty()) jsonStr = output;
+        SimpleJson::Value json = SimpleJson::Parser::parse(jsonStr);
         
         // 填充结果结构
         result.success = json["success"].getBool();
@@ -1079,7 +1085,9 @@ ParseResult Z3Parser::parse(const std::string& filename) {
     }
     
     try {
-        SimpleJson::Value json = SimpleJson::Parser::parse(output);
+        std::string jsonStr = SimpleJson::extractFirstJsonObject(output);
+        if (jsonStr.empty()) jsonStr = output;
+        SimpleJson::Value json = SimpleJson::Parser::parse(jsonStr);
         
         // 填充结果结构
         result.success = json["success"].getBool();
@@ -1137,7 +1145,9 @@ ParseResult ANTLR4Parser::parse(const std::string& filename) {
     }
     
     try {
-        SimpleJson::Value json = SimpleJson::Parser::parse(output);
+        std::string jsonStr = SimpleJson::extractFirstJsonObject(output);
+        if (jsonStr.empty()) jsonStr = output;
+        SimpleJson::Value json = SimpleJson::Parser::parse(jsonStr);
         
         result.success = json["success"].getBool();
         result.result_code = result.success ? ResultCode::OK : ResultCode::PARSE_ERROR;
@@ -1234,7 +1244,9 @@ ParseResult Cvc5Parser::parse(const std::string& filename) {
             return result;
         }
         try {
-            SimpleJson::Value json = SimpleJson::Parser::parse(output);
+            std::string jsonStr = SimpleJson::extractFirstJsonObject(output);
+            if (jsonStr.empty()) jsonStr = output;
+            SimpleJson::Value json = SimpleJson::Parser::parse(jsonStr);
             result.success = json["success"].getBool();
             result.result_code = result.success ? ResultCode::OK : ResultCode::PARSE_ERROR;
             result.parse_time = json["parse_time"].getNumber();
@@ -1353,7 +1365,9 @@ ParseResult SmtSwitchParser::parse(const std::string& filename) {
     if (pr.exit_code != 0)
         result.result_code = resultCodeFromStderr(pr.stderr_output);
     try {
-        SimpleJson::Value json = SimpleJson::Parser::parse(output);
+        std::string jsonStr = SimpleJson::extractFirstJsonObject(output);
+        if (jsonStr.empty()) jsonStr = output;
+        SimpleJson::Value json = SimpleJson::Parser::parse(jsonStr);
         result.success = json["success"].getBool();
         result.result_code = result.success ? ResultCode::OK : ResultCode::PARSE_ERROR;
         result.parse_time = json["parse_time"].getNumber();

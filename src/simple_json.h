@@ -398,4 +398,30 @@ private:
     }
 };
 
+// 从可能含前导文本的输出中提取第一个完整 JSON 对象（如 warning 行后的 {"success":...}）
+inline std::string extractFirstJsonObject(const std::string& output) {
+    size_t start = output.find('{');
+    if (start == std::string::npos) return "";
+    int depth = 0;
+    bool in_string = false;
+    char string_char = '\0';
+    bool escaped = false;
+    for (size_t i = start; i < output.size(); ++i) {
+        char c = output[i];
+        if (in_string) {
+            if (escaped) { escaped = false; continue; }
+            if (c == '\\') { escaped = true; continue; }
+            if (c == string_char) { in_string = false; continue; }
+            continue;
+        }
+        if (c == '"' || c == '\'') { in_string = true; string_char = c; continue; }
+        if (c == '{') { depth++; continue; }
+        if (c == '}') {
+            depth--;
+            if (depth == 0) return output.substr(start, i - start + 1);
+        }
+    }
+    return "";
+}
+
 } // namespace SimpleJson 

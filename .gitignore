@@ -156,6 +156,7 @@ external/smt-switch/smt-switch-*/
 !results/logs_sampled/*.log
 results_failed/
 old_results/
+results/failures/*
 
 # failed files
 failed_files/
@@ -164,3 +165,5 @@ fast_failed_files/
 # test
 test/*
 benchmark/*
+
+*.pyc

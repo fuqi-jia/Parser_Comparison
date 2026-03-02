@@ -162,7 +162,9 @@ ParseResult NativeParser::parse(const std::string& filename) {
         
         // 解析JSON输出
         try {
-            SimpleJson::Value json = SimpleJson::Parser::parse(output);
+            std::string jsonStr = SimpleJson::extractFirstJsonObject(output);
+            if (jsonStr.empty()) jsonStr = output;
+            SimpleJson::Value json = SimpleJson::Parser::parse(jsonStr);
             
             // 填充结果结构
             result.success = json["success"].getBool();
@@ -240,7 +242,9 @@ ParseResult PySMTParser::parse(const std::string& filename) {
         
         // 解析JSON输出
         try {
-            SimpleJson::Value json = SimpleJson::Parser::parse(output);
+            std::string jsonStr = SimpleJson::extractFirstJsonObject(output);
+            if (jsonStr.empty()) jsonStr = output;
+            SimpleJson::Value json = SimpleJson::Parser::parse(jsonStr);
             
             // 填充结果结构
             result.success = json["success"].getBool();
