@@ -1,4 +1,4 @@
-#include "../SMTParser/include/parser.h"
+#include "smtparser/parser.h"
 #include <iostream>
 #include <string>
 #include <chrono>
