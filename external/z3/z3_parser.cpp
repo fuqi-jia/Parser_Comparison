@@ -212,7 +212,6 @@ public:
             file.close();
             
             // 方法1: 尝试使用parse_file
-            bool parsed = false;
             try {
                 z3::expr_vector assertions = ctx.parse_file(filename.c_str());
                 
@@ -228,8 +227,7 @@ public:
                 }
                 
                 result.parsing_method = "z3_parse_file";
-                parsed = true;
-                
+
             } catch (const z3::exception& e) {
                 // 方法2: 尝试使用parse_string
                 try {
@@ -247,8 +245,7 @@ public:
                     }
                     
                     result.parsing_method = "z3_parse_string";
-                    parsed = true;
-                    
+
                 } catch (const z3::exception& e2) {
                     // 如果两种方法都失败，记录错误并返回
                     result.errors.push_back("Z3文件解析失败: " + std::string(e.msg()));

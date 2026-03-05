@@ -262,6 +262,8 @@ def main():
                     help="并行任务数（默认 200，适合 256 核服务器）")
     ap.add_argument("--exclude-parser", type=str, action="append", default=None, metavar="NAME",
                     help="排除指定 parser，不参与 benchmark（可多次指定，如 --exclude-parser native）")
+    ap.add_argument("--only-parser", type=str, default=None, metavar="NAME",
+                    help="仅运行指定 parser，重跑后结果会合并进主表（用于修好某个 parser 后只重跑该 parser）")
     args = ap.parse_args()
 
     def resolve_path(p):
@@ -283,11 +285,20 @@ def main():
         return 1
     print("binary: {}".format(binary), flush=True)
 
-    parsers = get_parser_list(binary)
-    if not parsers:
-        parsers = ["native", "pysmt", "jsmtlib", "z3", "antlr4", "cvc5", "smt-switch"]
+    all_parsers = get_parser_list(binary)
+    if not all_parsers:
+        all_parsers = ["native", "pysmt", "jsmtlib", "z3", "antlr4", "cvc5", "smt-switch"]
         print("警告: 使用默认 parser 列表", file=sys.stderr)
-    if args.exclude_parser:
+    if args.only_parser:
+        only = args.only_parser.strip()
+        if only not in all_parsers:
+            print("错误: --only-parser '{}' 不在可用列表中: {}".format(only, all_parsers), file=sys.stderr, flush=True)
+            return 1
+        parsers = [only]
+        print("仅运行 parser: {}（结果将合并进主表）".format(only), flush=True)
+    else:
+        parsers = list(all_parsers)
+    if args.exclude_parser and not args.only_parser:
         exclude_set = {p.strip() for p in args.exclude_parser if (p or "").strip()}
         parsers = [p for p in parsers if p not in exclude_set]
         if exclude_set:
@@ -318,8 +329,12 @@ def main():
         print("扫描得到 {} 个文件".format(len(files)), flush=True)
 
     done, checkpoint_rows = load_checkpoint(args.checkpoint)
+    if args.only_parser:
+        only = args.only_parser.strip()
+        done = {(f, p) for (f, p) in done if p != only}
+        print("仅重跑 parser '{}'，已从 done 中移除该 parser 的旧结果".format(only), flush=True)
     # checkpoint 即重启点：存的是已完成的 (file, parser)，续跑时跳过这些；表按 (file, parser) 聚合，与运行顺序无关
-    if args.resume and checkpoint_rows:
+    if args.resume and checkpoint_rows and not args.only_parser:
         print("从 checkpoint 恢复，已完成 {} 条".format(len(checkpoint_rows)), flush=True)
     total = len(files) * len(parsers)
     todo = [(f, p) for f in files for p in parsers if (f, p) not in done]

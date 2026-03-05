@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# 一键后台跑并行 benchmark（nohup &），默认跑全集 benchmark/non-incremental，30 秒超时，200 并行，断点续跑。
+# 一键后台跑并行 benchmark（nohup &），默认跑全集 benchmark/non-incremental，30 秒超时，断点续跑。
+# 默认 JOBS=24，避免打满 CPU；需要更快可设 JOBS=64 等，勿在共享机上设过大（如 200）。
 # 从项目根运行: ./scripts/run_parallel.sh
+# 只跑单个 parser 并更新主表: PARSER=cvc5 ./scripts/run_parallel.sh
+# 排除若干 parser（如先不跑 Java）: EXCLUDE_PARSER=antlr4,z3 ./scripts/run_parallel.sh
 # 查看进度: tail -f results/benchmark_main.log
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,8 +15,12 @@ FILE_LIST="${FILE_LIST:-results/file_list.txt}"
 BENCHMARK_DIR="${BENCHMARK_DIR:-benchmark/non-incremental}"
 LOG_DIR="${LOG_DIR:-results/logs}"
 MAIN_LOG="${MAIN_LOG:-results/benchmark_main.log}"
-JOBS="${JOBS:-200}"
+JOBS="${JOBS:-24}"
 TIMEOUT="${TIMEOUT:-30}"
+# 只跑单个 parser 时设置，例如 PARSER=cvc5；结果会合并进主表
+PARSER="${PARSER:-}"
+# 排除若干 parser（逗号分隔），例如 EXCLUDE_PARSER=antlr4,z3 先不跑 Java 相关 parser
+EXCLUDE_PARSER="${EXCLUDE_PARSER:-}"
 
 # 若默认 file_list 不存在：先尝试从 benchmark 目录自动生成，否则改用 sampled 列表
 if [ ! -f "$FILE_LIST" ]; then
@@ -57,7 +64,20 @@ echo "  主日志:        $MAIN_LOG"
 echo "  并行数:        $JOBS"
 echo "  超时(秒):     $TIMEOUT"
 echo "  断点续跑:      --resume"
+[ -n "$PARSER" ] && echo "  仅跑 parser:   $PARSER（结果合并进主表）"
+[ -n "$EXCLUDE_PARSER" ] && echo "  排除 parser:   $EXCLUDE_PARSER"
 echo ""
+
+ONLY_PARSER_ARGS=""
+[ -n "$PARSER" ] && ONLY_PARSER_ARGS="--only-parser $PARSER"
+
+EXCLUDE_PARSER_ARGS=""
+if [ -n "$EXCLUDE_PARSER" ]; then
+  for p in $(echo "$EXCLUDE_PARSER" | tr ',' ' '); do
+    p=$(echo "$p" | tr -d ' ')
+    [ -n "$p" ] && EXCLUDE_PARSER_ARGS="$EXCLUDE_PARSER_ARGS --exclude-parser $p"
+  done
+fi
 
 PYTHONUNBUFFERED=1 nohup python3 scripts/run_parser_benchmark.py \
     --file-list "$FILE_LIST" \
@@ -66,6 +86,8 @@ PYTHONUNBUFFERED=1 nohup python3 scripts/run_parser_benchmark.py \
     --memory-mb 4096 \
     --log-dir "$LOG_DIR" \
     --resume \
+    $ONLY_PARSER_ARGS \
+    $EXCLUDE_PARSER_ARGS \
     -j "$JOBS" \
     >> "$MAIN_LOG" 2>&1 &
 
