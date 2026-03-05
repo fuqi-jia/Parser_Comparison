@@ -50,19 +50,28 @@ build_cvc5() {
         SKIP+=("cvc5")
         return
     fi
-    PREBUILT_DIR=$(ls -d "$EXTERNAL_ROOT/cvc5"/cvc5-Linux-* "$EXTERNAL_ROOT/cvc5"/cvc5-*-static 2>/dev/null | head -1)
-    if [ -z "$PREBUILT_DIR" ] || [ ! -f "$PREBUILT_DIR/include/cvc5/cvc5.h" ]; then
-        echo "[SKIP] cvc5: 未找到预编译包（需 include/cvc5/cvc5.h）"
-        echo "       请运行: ./scripts/download.sh --parsers-only  或从 https://github.com/cvc5/cvc5/releases 下载 Linux libcxx-static 解压到 external/cvc5/"
+    # 支持：cvc5-install（从源码 make install）、或预编译包 cvc5-Linux-* / cvc5-*-static
+    PREBUILT_DIR=""
+    if [ -f "$EXTERNAL_ROOT/cvc5/cvc5-install/include/cvc5/cvc5.h" ] && [ -f "$EXTERNAL_ROOT/cvc5/cvc5-install/lib/libcvc5.a" ]; then
+        PREBUILT_DIR="$EXTERNAL_ROOT/cvc5/cvc5-install"
+    else
+        PREBUILT_DIR=$(ls -d "$EXTERNAL_ROOT/cvc5"/cvc5-Linux-* "$EXTERNAL_ROOT/cvc5"/cvc5-*-static 2>/dev/null | head -1)
+        [ -n "$PREBUILT_DIR" ] && [ ! -f "$PREBUILT_DIR/include/cvc5/cvc5.h" ] && PREBUILT_DIR=""
+    fi
+    if [ -z "$PREBUILT_DIR" ]; then
+        echo "[SKIP] cvc5: 未找到预编译包或 cvc5-install（需 include/cvc5/cvc5.h 与 lib/libcvc5.a）"
+        echo "       预编译: ./scripts/download.sh --parsers-only  或从 https://github.com/cvc5/cvc5/releases 下载解压到 external/cvc5/"
+        echo "       从源码: BUILD_CVC5_FROM_SOURCE=1 ./scripts/download.sh --parsers-only && ./scripts/build_cvc5_from_source.sh"
         SKIP+=("cvc5")
         return
     fi
+    # 仅预编译包可能为 libcxx，cvc5-install 用系统工具链无需 libc++
     use_libcxx="${USE_CLANG_LIBCXX:-0}"
     if [ "$use_libcxx" != "1" ] && ls "$EXTERNAL_ROOT/cvc5"/cvc5-*libcxx* 1>/dev/null 2>&1 && command -v clang++ &>/dev/null; then
         use_libcxx=1
     fi
     if [ "$use_libcxx" != "1" ] && ls "$EXTERNAL_ROOT/cvc5"/cvc5-*libcxx* 1>/dev/null 2>&1; then
-        echo "[SKIP] cvc5: 预编译包为 libcxx，需安装 clang++ 或设置 USE_CLANG_LIBCXX=1"
+        echo "[SKIP] cvc5: 预编译包为 libcxx，需安装 clang++ 或设置 USE_CLANG_LIBCXX=1；或从源码构建: ./scripts/build_cvc5_from_source.sh"
         SKIP+=("cvc5")
         return
     fi
@@ -175,13 +184,16 @@ build_smt_switch() {
         SKIP+=("smt-switch")
         return
     fi
+    # 源码目录：若本目录有 CMakeLists.txt（仓库包装器）则用 ..，否则用 ../smt-switch-1.0.6（仅下载解压时，因 CMakeLists.txt 被 gitignore）
+    SMT_SWITCH_SRC=".."
+    [ -f "$EXTERNAL_ROOT/smt-switch/CMakeLists.txt" ] || SMT_SWITCH_SRC="../smt-switch-1.0.6"
     # 预编译包为 libcxx 时需 clang+libc++（仅设置 CXX，避免 C 编译器测试收到 -stdlib=libc++）
     EXTRA_CMAKE=""
     if [ -f "${CVC5_HOME}/lib/libcvc5.a" ] && echo "$CVC5_HOME" | grep -q libcxx && command -v clang++ &>/dev/null; then
         EXTRA_CMAKE="-DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS=-stdlib=libc++"
     fi
     if ( cd "$EXTERNAL_ROOT/smt-switch" && mkdir -p build && cd build && \
-         cmake .. \
+         cmake "$SMT_SWITCH_SRC" \
              -DSMTLIB_READER=ON \
              -DBUILD_CVC5=ON \
              -DCVC5_HOME="${CVC5_HOME}" \

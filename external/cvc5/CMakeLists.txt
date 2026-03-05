@@ -4,13 +4,20 @@ project(cvc5_parser CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 
-# 本目录下预编译包：cvc5-Linux-* 或 cvc5-*-*（多为 libcxx-static，需 clang -stdlib=libc++ 或使用系统/自编 cvc5）
-file(GLOB CVC5_PREBUILT "cvc5-Linux-*" "cvc5-*-*")
-if(CVC5_PREBUILT)
+# 本目录下：优先 cvc5-install（从源码 make install 得到，兼容旧 glibc），否则预编译包 cvc5-Linux-* / cvc5-*-static
+set(CVC5_DIR "")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cvc5-install/include/cvc5/cvc5.h" AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cvc5-install/lib/libcvc5.a")
+  set(CVC5_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cvc5-install")
+endif()
+if(NOT CVC5_DIR)
+  file(GLOB CVC5_PREBUILT "cvc5-Linux-*" "cvc5-*-static")
+  if(CVC5_PREBUILT)
     list(GET CVC5_PREBUILT 0 CVC5_DIR)
+  endif()
+endif()
+if(CVC5_DIR)
     set(CVC5_INCLUDE "${CVC5_DIR}/include")
     set(CVC5_LIB "${CVC5_DIR}/lib")
-    # 预编译包通常含 libcvc5.a + libcvc5parser.a，依赖 GMP、libpicpoly、cadical；若为 libcxx-static 则需 clang -stdlib=libc++
     set(CVC5_LIBS cvc5 cvc5parser picpolyxx picpoly cadical gmpxx gmp)
 else()
     set(CVC5_INCLUDE "${CMAKE_CURRENT_SOURCE_DIR}/include")

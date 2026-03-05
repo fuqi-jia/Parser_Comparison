@@ -179,6 +179,21 @@ make -j$(nproc)
 
 或在一键脚本中：`USE_SYSTEM_CLANG=1 USE_CLANG_LIBCXX=1 ./scripts/build_all_parsers.sh`（需本机已安装 `/usr/bin/clang++` 及 libc++）。
 
+**若系统 glibc < 2.38**：预编译包在 glibc 2.38+ 下构建，会引用 `__isoc23_*`；本机 glibc 更旧（`ldd --version` 可查）时无法链接。可**从源码构建 cvc5**（在本机编译则依赖本机 glibc，无此符号问题）：
+
+```bash
+# 1) 拉取 cvc5 源码（若已有预编译包目录可先删或设 BUILD_CVC5_FROM_SOURCE=1）
+BUILD_CVC5_FROM_SOURCE=1 ./scripts/download.sh --parsers-only
+
+# 2) 从源码构建并 install 到 external/cvc5/cvc5-install（需 cmake、g++、python3、bison、flex；--auto-download 会拉 GMP 等）
+./scripts/build_cvc5_from_source.sh
+
+# 3) 再编 cvc5_parser
+./scripts/build_all_parsers.sh
+```
+
+无 bison/flex 时可用 Conda：`conda install -c conda-forge bison flex`。从源码构建约需数分钟。
+
 ### 2. haskell-0.0.2 跳过（未找到 cabal）或构建报错 Int#/Int16#
 
 需要 GHC + Cabal + alex，**全部可装到用户目录，无需 root**。  

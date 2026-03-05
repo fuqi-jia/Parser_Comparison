@@ -109,17 +109,19 @@ external/cvc5/.clang-tidy
 external/cvc5/.mailmap
 external/cvc5/.style.yapf
 external/cvc5/VERSION
-# cvc5 预编译发布包（如 cvc5-Linux-x86_64-libcxx-static 解压目录）
+# cvc5 预编译发布包、从源码 install 目录、下载解压的源码目录
 cvc5-Linux-*/
 cvc5-*-static/
 external/cvc5/cvc5-Linux-*/
 external/cvc5/cvc5-*-static/
+external/cvc5/cvc5-install/
+external/cvc5/cvc5-cvc5-*/
 
 # z3 源码（external/z3 下克隆的 z3 仓库）
 external/z3/z3-z3-*/
 external/z3/z3-*
 
-# smt-switch 源码与构建（保留 external/smt-switch/README.md 与 src/smt_switch_parser.cpp）
+# smt-switch 源码与构建（保留 README、src/smt_switch_parser.cpp、CMakeLists.txt 包装器）
 external/smt-switch/.git/
 external/smt-switch/build/
 external/smt-switch/bitwuzla/
@@ -136,7 +138,6 @@ external/smt-switch/tests/
 external/smt-switch/yices2/
 external/smt-switch/z3/
 external/smt-switch/configure.sh
-external/smt-switch/CMakeLists.txt
 external/smt-switch/LICENSE
 external/smt-switch/AUTHORS
 external/smt-switch/CONTRIBUTING.md

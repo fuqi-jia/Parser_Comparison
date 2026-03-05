@@ -108,13 +108,23 @@ do_parsers() {
         (cd "$JSMTPATH" && unzip -o -q "$JSMTPACK" && [ -d jSMTLIB-V0.9.10.1 ] && mv jSMTLIB-V0.9.10.1 jSMTLIB-0.9.10.1; rm -f "$JSMTPACK") || true
     fi
 
-    # cvc5: 优先下载预编译包（cvc5_parser 需要 include/lib）。仅有源码目录不算“已有预编译”，会继续尝试下载
+    # cvc5: 优先下载预编译包（cvc5_parser 需要 include/lib）。BUILD_CVC5_FROM_SOURCE=1 时则确保有源码以便从源码构建
     if [ -d "$EXTERNAL/cvc5" ]; then
         HAS_VALID_PREBUILT=""
         for d in $(ls -d "$EXTERNAL/cvc5"/cvc5-Linux-* "$EXTERNAL/cvc5"/cvc5-*-static 2>/dev/null); do
             [ -f "$d/include/cvc5/cvc5.h" ] && HAS_VALID_PREBUILT="$d" && break
         done
-        if [ -n "$HAS_VALID_PREBUILT" ]; then
+        if [ "${BUILD_CVC5_FROM_SOURCE:-0}" = "1" ]; then
+            if ! ls -d "$EXTERNAL/cvc5"/cvc5-cvc5-* 2>/dev/null | head -1 | grep -q .; then
+                echo "-------- cvc5 源码（BUILD_CVC5_FROM_SOURCE=1）--------"
+                CVC5_SRC_ARC="$EXTERNAL/cvc5/cvc5-src.tar.gz"
+                if download_url "https://github.com/cvc5/cvc5/archive/refs/tags/${CVC5_TAG}.tar.gz" "$CVC5_SRC_ARC"; then
+                    extract_tar_gz "$CVC5_SRC_ARC" "$EXTERNAL/cvc5" && rm -f "$CVC5_SRC_ARC" && echo "[OK] cvc5 源码已解压，可执行: ./scripts/build_cvc5_from_source.sh"
+                fi
+            else
+                echo "[已存在] cvc5 源码，可执行: ./scripts/build_cvc5_from_source.sh"
+            fi
+        elif [ -n "$HAS_VALID_PREBUILT" ]; then
             echo "[已存在] cvc5 预编译包: $HAS_VALID_PREBUILT"
         elif [ -f "$EXTERNAL/cvc5/CMakeLists.txt" ]; then
             echo "-------- cvc5 预编译包 (GitHub Releases, Linux libcxx-static) --------"
@@ -149,6 +159,14 @@ do_parsers() {
             fi
             if ! ls -d "$EXTERNAL/cvc5"/cvc5-Linux-* "$EXTERNAL/cvc5"/cvc5-*-static 2>/dev/null | head -1 | grep -q .; then
                 echo "[未获取] 请手动从 https://github.com/cvc5/cvc5/releases 下载 Linux libcxx-static 包，解压到 $EXTERNAL/cvc5/ 后执行 build_all_parsers.sh"
+                # 若无预编译包且无源码，下载源码以便从源码构建（系统 glibc < 2.38 时需此方式）
+                if ! ls -d "$EXTERNAL/cvc5"/cvc5-cvc5-* 2>/dev/null | head -1 | grep -q .; then
+                    echo "-------- cvc5 源码（供从源码构建，如 glibc < 2.38）--------"
+                    CVC5_SRC_ARC="$EXTERNAL/cvc5/cvc5-src.tar.gz"
+                    if download_url "https://github.com/cvc5/cvc5/archive/refs/tags/${CVC5_TAG}.tar.gz" "$CVC5_SRC_ARC"; then
+                        extract_tar_gz "$CVC5_SRC_ARC" "$EXTERNAL/cvc5" && rm -f "$CVC5_SRC_ARC" && echo "[OK] cvc5 源码已解压，可执行: ./scripts/build_cvc5_from_source.sh"
+                    fi
+                fi
             fi
         else
             echo "-------- cvc5 源码 (GitHub Releases) --------"
