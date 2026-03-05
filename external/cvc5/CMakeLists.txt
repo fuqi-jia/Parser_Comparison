@@ -21,7 +21,13 @@ endif()
 add_executable(cvc5_parser cvc5_parser.cpp)
 target_include_directories(cvc5_parser PRIVATE ${CVC5_INCLUDE})
 target_link_directories(cvc5_parser PRIVATE ${CVC5_LIB})
-target_link_libraries(cvc5_parser PRIVATE ${CVC5_LIBS})
+# 预编译包若在 glibc 2.38+ 下构建会引用 __isoc23_strtol 等，Conda 环境可能链接到旧 glibc；显式链接系统 libc 以解析这些符号
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  target_link_directories(cvc5_parser PRIVATE /usr/lib/x86_64-linux-gnu /usr/lib64 /usr/lib)
+  target_link_libraries(cvc5_parser PRIVATE ${CVC5_LIBS} c)
+else()
+  target_link_libraries(cvc5_parser PRIVATE ${CVC5_LIBS})
+endif()
 # 若使用 libcxx-static 预编译包，请用 clang 并加：-DCMAKE_CXX_FLAGS="-stdlib=libc++" -DCMAKE_EXE_LINKER_FLAGS="-stdlib=libc++"
 target_compile_options(cvc5_parser PRIVATE -O2 -Wall)
 

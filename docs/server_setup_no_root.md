@@ -156,6 +156,19 @@ USE_CLANG_LIBCXX=1 ./scripts/build_all_parsers.sh
 
 若已装 clangxx 仍报 **`cannot find -lc++`** 或 **`x86_64-conda-linux-gnu-ld: cannot find -lc++`**，补装 libc++ 即可：`conda install -c conda-forge libcxx-devel -y`，再重新执行上面的编译命令。
 
+**若报错：** **`undefined reference to '__isoc23_strtol'`** 或 **`__isoc23_fscanf'`**  
+说明预编译包是用 glibc 2.38+ 构建的，而 Conda 环境里的链接器用的是较旧的 glibc。可先 `git pull` 再试（CMake 已尝试显式链接系统 libc）。若仍失败，改用**系统 clang** 编译/链接（会使用系统 glibc）：安装系统 clang 与 libc++（若有 root：`apt install clang libc++-dev`），然后执行：
+
+```bash
+cd /path/to/Parser_Comparison/external/cvc5
+rm -rf build && mkdir build && cd build
+cmake .. -DCMAKE_CXX_COMPILER=/usr/bin/clang++ \
+  -DCMAKE_CXX_FLAGS="-stdlib=libc++" -DCMAKE_EXE_LINKER_FLAGS="-stdlib=libc++"
+make -j$(nproc)
+```
+
+或在一键脚本中：`USE_SYSTEM_CLANG=1 USE_CLANG_LIBCXX=1 ./scripts/build_all_parsers.sh`（需本机已安装 `/usr/bin/clang++` 及 libc++）。
+
 ### 2. haskell-0.0.2 跳过（未找到 cabal）
 
 需要 GHC + Cabal，且**不需要 root**：用 [ghcup](https://www.haskell.org/ghcup/) 装到 `~/.ghcup`：

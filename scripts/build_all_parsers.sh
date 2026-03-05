@@ -4,6 +4,7 @@
 # 可选环境变量:
 #   CVC5_HOME   - 编译 smt-switch 时需指向 cvc5 源码根目录
 #   USE_CLANG_LIBCXX - 设为 1 时，cvc5_parser 使用 clang -stdlib=libc++（适配 libcxx-static 预编译包）
+#   USE_SYSTEM_CLANG - 设为 1 时，cvc5 用 /usr/bin/clang++ 编译/链接（可避免 Conda 下 __isoc23_strtol 等未定义；需系统安装 clang 与 libc++-dev）
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -65,13 +66,23 @@ build_cvc5() {
         SKIP+=("cvc5")
         return
     fi
+    cvc5_cc="clang++"
+    [ "${USE_SYSTEM_CLANG:-0}" = "1" ] && [ -x "/usr/bin/clang++" ] && cvc5_cc="/usr/bin/clang++"
+    # 使用 Conda clang 时，Conda 的 ld 可能链接到旧 glibc，导致 __isoc23_strtol 等未定义；强制用系统 ld 链接以使用系统 glibc
+    cvc5_ld_flags=""
+    if [ "$use_libcxx" = "1" ]; then
+        cvc5_ld_flags="-stdlib=libc++"
+        if [ "$cvc5_cc" = "clang++" ] && [ -x "/usr/bin/ld" ]; then
+            cvc5_ld_flags="-stdlib=libc++ -fuse-ld=/usr/bin/ld -L/usr/lib/x86_64-linux-gnu -L/usr/lib64 -L/usr/lib"
+        fi
+    fi
     if ( cd "$EXTERNAL_ROOT/cvc5" && mkdir -p build && cd build && \
-         if [ "$use_libcxx" = "1" ]; then
-             cmake .. -DCMAKE_CXX_COMPILER=clang++ \
+         if [ -n "$cvc5_ld_flags" ]; then
+             cmake .. -DCMAKE_CXX_COMPILER="$cvc5_cc" \
                  -DCMAKE_CXX_FLAGS="-stdlib=libc++" \
-                 -DCMAKE_EXE_LINKER_FLAGS="-stdlib=libc++"
+                 -DCMAKE_EXE_LINKER_FLAGS="$cvc5_ld_flags"
          else
-             cmake ..
+             cmake .. -DCMAKE_CXX_COMPILER="$cvc5_cc"
          fi && \
          make -j"$NPROC" ); then
         echo "[OK] cvc5"
