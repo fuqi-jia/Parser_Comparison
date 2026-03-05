@@ -138,7 +138,8 @@ build_haskell() {
         SKIP+=("haskell-0.0.2")
         return
     fi
-    run_build "haskell-0.0.2" "haskell-0.0.2" bash ./build.sh
+    # smt-lib-0.0.2 的 alex 生成代码与 GHC 9.x 不兼容，优先用 GHC 8.10.7 构建（需先 ghcup install ghc 8.10.7）
+    run_build "haskell-0.0.2" "haskell-0.0.2" env GHC_VERSION=8.10.7 bash ./build.sh
 }
 
 # smt-switch: 需 CVC5_HOME 或自动检测。与 cvc5_parser 共用同一份预编译包（放在 external/cvc5/ 即可，无需在 smt-switch 下再放一份）

@@ -40,6 +40,9 @@ conda activate smtbench
 # 实验必需：pysmt + Java（antlr4、jsmtlib 用）
 conda install -c conda-forge pysmt openjdk=17 -y
 
+# 编译主程序与 SMTParser：GMP/MPFR + 用 conda 的 cmake（避免系统 cmake 找到系统 mpfr 但编译器拿不到头文件）
+conda install -c conda-forge gmp mpfr cmake -y
+
 # 可选：若需要 prolog 对比
 # conda install -c conda-forge swi-prolog -y
 ```
@@ -75,7 +78,7 @@ export PYTHON="$HOME/miniconda3/envs/smtbench/bin/python"
 ### C++ 类（无需 install 到系统）
 
 - **cvc5**、**z3**、**smt-switch**：用 `scripts/build_all_parsers.sh` 在项目内编译即可，可执行文件在 `external/*/build/` 下，主程序会到这些路径找，**不需要** `make install` 或 root。
-- 若系统没有 cmake/g++：可用 `conda install -c conda-forge cmake compilers`，再在激活该环境的情况下执行 `build_all_parsers.sh`。
+- 若系统没有 cmake/g++：可用 `conda install -c conda-forge cmake compilers`，再在激活该环境的情况下执行 `build_all_parsers.sh`。**用 conda 装 gmp/mpfr 时，cmake 也应用 conda 的**，这样主程序 `cd build && cmake ..` 才能正确找到 mpfr 头文件。
 - **cvc5 推荐用预编译包**（无需自己编 cvc5）：先运行 `./scripts/download.sh --parsers-only`，脚本会尝试下载 Linux libcxx-static 并解压到 `external/cvc5/`；若失败，请到 [cvc5 Releases](https://github.com/cvc5/cvc5/releases) 下载对应版本的 `cvc5-*-x86_64-Linux-libcxx-static.tar.gz`，解压到 `external/cvc5/` 下（解压后目录名需为 `cvc5-Linux-x86_64-libcxx-static` 或类似）。然后安装 clang + libc++：`conda install -c conda-forge clangxx libcxx-devel`，再执行 `USE_CLANG_LIBCXX=1 ./scripts/build_all_parsers.sh`。  
   **预编译包只需放在 `external/cvc5/` 一份**：cvc5_parser 和 smt-switch 都会用这一份（build_all_parsers.sh 会把 `CVC5_HOME` 指到该目录），无需在 smt-switch 目录里再放一份。
 
@@ -96,8 +99,10 @@ export PYTHON="$HOME/miniconda3/envs/smtbench/bin/python"
    `conda install -c conda-forge clangxx` 再 build。
 
 3. **编译主程序**（若尚未编译）  
-   在项目根目录：  
+   在项目根目录，**先激活 conda 环境**（`conda activate smtbench`），再执行（根目录 CMakeLists 会读 `CONDA_PREFIX` 并把 conda 的 pkgconfig 加入 `PKG_CONFIG_PATH`，这样 **SMTParser 子模块不用改** 也能找到 conda 的 gmp/mpfr）：  
    `mkdir -p build && cd build && cmake .. && make -j$(nproc)`  
+   建议用 conda 的 cmake（`conda install -c conda-forge cmake`），否则需在配置前手动：  
+   `export PKG_CONFIG_PATH=$CONDA_PREFIX/lib/pkgconfig:$CONDA_PREFIX/share/pkgconfig:$PKG_CONFIG_PATH`  
    运行 benchmark 时从项目根目录执行，或保证 `smt_parser_comparison` 在 PATH 且当前目录/可执行文件所在目录能解析到 `external/`（见主程序说明）。
 
 ---
@@ -174,46 +179,37 @@ make -j$(nproc)
 
 或在一键脚本中：`USE_SYSTEM_CLANG=1 USE_CLANG_LIBCXX=1 ./scripts/build_all_parsers.sh`（需本机已安装 `/usr/bin/clang++` 及 libc++）。
 
-### 2. haskell-0.0.2 跳过（未找到 cabal）
+### 2. haskell-0.0.2 跳过（未找到 cabal）或构建报错 Int#/Int16#
 
-需要 GHC + Cabal + alex，**全部可装到用户目录，无需 root**。按下面顺序执行即可。
+需要 GHC + Cabal + alex，**全部可装到用户目录，无需 root**。  
+**注意**：smt-lib-0.0.2 的 alex 生成代码与 **GHC 9.x** 不兼容（会报 `Couldn't match expected type 'Int16#' with actual type 'Int#'` 等），必须用 **GHC 8.10.7** 构建。
 
-**步骤 1：安装 GHC 和 Cabal（ghcup，装到 ~/.ghcup）**
+**步骤 1：安装 ghcup 与 GHC 8.10.7**
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
+source ~/.ghcup/env
+ghcup install ghc 8.10.7
 ```
 
-- 安装过程会问是否加入 PATH，选 **Yes**；是否安装 haskell-language-server 等可选工具可选 **No**。
-- 安装结束后按提示执行（或新开终端后执行）：
-  ```bash
-  source ~/.ghcup/env
-  ```
-  也可把 `source ~/.ghcup/env` 写入 `~/.bashrc`，以后登录自动生效。
+**步骤 2：用 GHC 8.10.7 安装 alex（必须用 8.10 环境，否则生成的代码与 9.x 不兼容）**
 
-**步骤 2：安装 alex（二选一）**
-
-- **用 Conda（推荐，无需额外配置）**：
-  ```bash
-  conda activate smtbench
-  conda install -c conda-forge alex -y
-  ```
-- **用 Cabal**：
-  ```bash
-  source ~/.ghcup/env
-  cabal install alex --installdir=$HOME/.local/bin
-  export PATH="$HOME/.local/bin:$PATH"
-  ```
+```bash
+source ~/.ghcup/env
+ghcup run ghc-8.10.7 -- cabal install alex --installdir=$HOME/.local/bin
+export PATH="$HOME/.local/bin:$PATH"
+```
 
 **步骤 3：重新编译**
 
 ```bash
-source ~/.ghcup/env   # 当前 shell 若还没加载过 ghcup
+source ~/.ghcup/env
 cd /path/to/Parser_Comparison
 ./scripts/build_all_parsers.sh
 ```
 
-若仍提示未找到 cabal，确认同一 shell 里已执行 `source ~/.ghcup/env`，且 `which cabal` 指向 `~/.ghcup` 下的路径。
+脚本会自动设置 `GHC_VERSION=8.10.7`，在已安装 GHC 8.10.7 时用其构建 haskell。  
+若未安装 8.10.7，会 fallback 到当前默认 GHC（可能仍报 Int#/Int16#），此时请完成步骤 1 再试。
 
 ### 3. smt-switch 跳过（检测到 cvc5 源码但尚未构建）
 

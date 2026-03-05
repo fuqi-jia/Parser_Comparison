@@ -15,6 +15,12 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-local-typedefs")
 # set SMTParser build options
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
 
+# Conda：不改 SMTParser 时，让子目录里 pkg_check_modules(MPFR/gmp) 找到 conda 的 gmp/mpfr
+if(DEFINED ENV{CONDA_PREFIX} AND NOT "$ENV{CONDA_PREFIX}" STREQUAL "")
+  set(ENV{PKG_CONFIG_PATH} "$ENV{CONDA_PREFIX}/lib/pkgconfig:$ENV{CONDA_PREFIX}/share/pkgconfig:$ENV{PKG_CONFIG_PATH}")
+  message(STATUS "PKG_CONFIG_PATH 已加入 CONDA_PREFIX，SMTParser 将使用 conda 的 gmp/mpfr")
+endif()
+
 # add SMTParser subdirectory
 add_subdirectory(SMTParser)
 
