@@ -101,12 +101,14 @@ do_parsers() {
         (cd "$JSMTPATH" && unzip -o -q "$JSMTPACK" && [ -d jSMTLIB-V0.9.10.1 ] && mv jSMTLIB-V0.9.10.1 jSMTLIB-0.9.10.1; rm -f "$JSMTPACK") || true
     fi
 
-    # cvc5: 优先下载预编译包（cvc5_parser 需要 include/lib）；无预编译时再下源码
+    # cvc5: 优先下载预编译包（cvc5_parser 需要 include/lib）。仅有源码目录不算“已有预编译”，会继续尝试下载
     if [ -d "$EXTERNAL/cvc5" ]; then
-        HAS_PREBUILT=$(ls -d "$EXTERNAL/cvc5"/cvc5-Linux-* "$EXTERNAL/cvc5"/cvc5-*-static 2>/dev/null | head -1)
-        HAS_SRC=$(ls -d "$EXTERNAL/cvc5"/cvc5-cvc5-* 2>/dev/null | head -1)
-        if [ -n "$HAS_PREBUILT" ] || [ -n "$HAS_SRC" ]; then
-            echo "[已存在] cvc5 预编译包或源码"
+        HAS_VALID_PREBUILT=""
+        for d in $(ls -d "$EXTERNAL/cvc5"/cvc5-Linux-* "$EXTERNAL/cvc5"/cvc5-*-static 2>/dev/null); do
+            [ -f "$d/include/cvc5/cvc5.h" ] && HAS_VALID_PREBUILT="$d" && break
+        done
+        if [ -n "$HAS_VALID_PREBUILT" ]; then
+            echo "[已存在] cvc5 预编译包: $HAS_VALID_PREBUILT"
         elif [ -f "$EXTERNAL/cvc5/CMakeLists.txt" ]; then
             echo "-------- cvc5 预编译包 (GitHub Releases, Linux libcxx-static) --------"
             CVC5_DEST="$EXTERNAL/cvc5"
@@ -153,9 +155,20 @@ do_parsers() {
     if [ -d "$EXTERNAL/smt-switch" ] && [ ! -d "$EXTERNAL/smt-switch/smt-switch-${SMT_SWITCH_TAG}" ]; then
         echo "-------- smt-switch (GitHub) --------"
         SS_ARC="$EXTERNAL/smt-switch/smt-switch-src.tar.gz"
+        # 若已有压缩包但未成功解压（损坏或不完整），删除以便重新下载
+        if [ -f "$SS_ARC" ]; then
+            if ! (gzip -t "$SS_ARC" 2>/dev/null); then
+                echo "[移除损坏] $SS_ARC，将重新下载"
+                rm -f "$SS_ARC"
+            fi
+        fi
         if download_url "https://github.com/stanford-centaur/smt-switch/archive/refs/tags/${SMT_SWITCH_TAG}.tar.gz" "$SS_ARC"; then
-            extract_tar_gz "$SS_ARC" "$EXTERNAL/smt-switch" && rm -f "$SS_ARC"
-            [ -d "$EXTERNAL/smt-switch/smt-switch-${SMT_SWITCH_TAG}" ] && echo "[OK] smt-switch 已解压"
+            if extract_tar_gz "$SS_ARC" "$EXTERNAL/smt-switch"; then
+                rm -f "$SS_ARC"
+                [ -d "$EXTERNAL/smt-switch/smt-switch-${SMT_SWITCH_TAG}" ] && echo "[OK] smt-switch 已解压"
+            else
+                echo "[失败] 解压 smt-switch 失败，可删除 $SS_ARC 后重新运行本脚本"
+            fi
         fi
     else
         [ -d "$EXTERNAL/smt-switch" ] && echo "[已存在] smt-switch"
