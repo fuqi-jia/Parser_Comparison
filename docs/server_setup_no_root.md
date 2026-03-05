@@ -136,11 +136,11 @@ export PYTHON="$HOME/miniconda3/envs/smtbench/bin/python"
 
 说明服务器上的 `external/cvc5` 缺少本仓库的包装器文件（此前 CMakeLists.txt 被 .gitignore 排除）。解决：从本机把 `external/cvc5/CMakeLists.txt`、`external/cvc5/cvc5_parser.cpp`、`external/cvc5/run.sh` 拷到服务器同一路径；或在本机提交并推送 CMakeLists.txt 后在服务器 `git pull`，再执行下面的编译。
 
-**若为预编译包 libcxx 的链接/编译失败：** 预编译包 `cvc5-Linux-*-libcxx-static` 需要 **clang++** 和 **libc++**。用 Conda 装到当前环境即可：
+**若为预编译包 libcxx 的链接/编译失败：** 预编译包 `cvc5-Linux-*-libcxx-static` 需要 **clang++** 和 **libc++**。用 Conda 装到当前环境时，需同时安装编译器与标准库（否则可能报 `cannot find -lc++`）：
 
 ```bash
 conda activate smtbench   # 或你的环境名
-conda install -c conda-forge clangxx -y
+conda install -c conda-forge clangxx libcxx-devel -y
 ```
 
 然后**指定用 clang + libc++** 再编译：
@@ -150,7 +150,7 @@ cd /path/to/Parser_Comparison
 USE_CLANG_LIBCXX=1 ./scripts/build_all_parsers.sh
 ```
 
-若系统已有 clang++ 但脚本仍报错，也可先试 `USE_CLANG_LIBCXX=1 ./scripts/build_all_parsers.sh`。
+若已装 clangxx 仍报 **`cannot find -lc++`** 或 **`x86_64-conda-linux-gnu-ld: cannot find -lc++`**，补装 libc++ 即可：`conda install -c conda-forge libcxx-devel -y`，再重新执行上面的编译命令。
 
 ### 2. haskell-0.0.2 跳过（未找到 cabal）
 
