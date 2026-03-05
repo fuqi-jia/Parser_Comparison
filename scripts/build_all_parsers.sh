@@ -52,14 +52,14 @@ build_cvc5() {
     fi
     # 支持：cvc5-install（从源码 make install）、或预编译包 cvc5-Linux-* / cvc5-*-static
     PREBUILT_DIR=""
-    if [ -f "$EXTERNAL_ROOT/cvc5/cvc5-install/include/cvc5/cvc5.h" ] && [ -f "$EXTERNAL_ROOT/cvc5/cvc5-install/lib/libcvc5.a" ]; then
+    if [ -f "$EXTERNAL_ROOT/cvc5/cvc5-install/include/cvc5/cvc5.h" ] && { [ -f "$EXTERNAL_ROOT/cvc5/cvc5-install/lib/libcvc5.a" ] || [ -f "$EXTERNAL_ROOT/cvc5/cvc5-install/lib/libcvc5.so" ] || [ -f "$EXTERNAL_ROOT/cvc5/cvc5-install/lib/libcvc5.so.1" ]; }; then
         PREBUILT_DIR="$EXTERNAL_ROOT/cvc5/cvc5-install"
     else
         PREBUILT_DIR=$(ls -d "$EXTERNAL_ROOT/cvc5"/cvc5-Linux-* "$EXTERNAL_ROOT/cvc5"/cvc5-*-static 2>/dev/null | head -1)
         [ -n "$PREBUILT_DIR" ] && [ ! -f "$PREBUILT_DIR/include/cvc5/cvc5.h" ] && PREBUILT_DIR=""
     fi
     if [ -z "$PREBUILT_DIR" ]; then
-        echo "[SKIP] cvc5: 未找到预编译包或 cvc5-install（需 include/cvc5/cvc5.h 与 lib/libcvc5.a）"
+        echo "[SKIP] cvc5: 未找到预编译包或 cvc5-install（需 include/cvc5/cvc5.h 与 lib/libcvc5.a 或 lib/libcvc5.so）"
         echo "       预编译: ./scripts/download.sh --parsers-only  或从 https://github.com/cvc5/cvc5/releases 下载解压到 external/cvc5/"
         echo "       从源码: BUILD_CVC5_FROM_SOURCE=1 ./scripts/download.sh --parsers-only && ./scripts/build_cvc5_from_source.sh"
         SKIP+=("cvc5")
@@ -156,7 +156,7 @@ build_haskell() {
 build_smt_switch() {
     if [ -z "${CVC5_HOME:-}" ]; then
         # 优先：cvc5-install（从源码构建），其次预编译包 cvc5-Linux-* 等
-        if [ -f "$EXTERNAL_ROOT/cvc5/cvc5-install/lib/libcvc5.a" ] && [ -f "$EXTERNAL_ROOT/cvc5/cvc5-install/include/cvc5/cvc5.h" ]; then
+        if [ -f "$EXTERNAL_ROOT/cvc5/cvc5-install/include/cvc5/cvc5.h" ] && { [ -f "$EXTERNAL_ROOT/cvc5/cvc5-install/lib/libcvc5.a" ] || [ -f "$EXTERNAL_ROOT/cvc5/cvc5-install/lib/libcvc5.so" ] || [ -f "$EXTERNAL_ROOT/cvc5/cvc5-install/lib/libcvc5.so.1" ]; }; then
             CVC5_HOME="$EXTERNAL_ROOT/cvc5/cvc5-install"
             echo "[smt-switch] 使用 cvc5-install: $CVC5_HOME"
         elif PREBUILT=$(ls -d "$EXTERNAL_ROOT/cvc5"/cvc5-Linux-* "$EXTERNAL_ROOT/cvc5"/cvc5-*-static 2>/dev/null | head -1) && [ -n "$PREBUILT" ] && [ -f "$PREBUILT/lib/libcvc5.a" ] && [ -f "$PREBUILT/include/cvc5/cvc5.h" ]; then
