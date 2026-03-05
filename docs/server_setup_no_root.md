@@ -124,4 +124,85 @@ export PYTHON="$HOME/miniconda3/envs/smtbench/bin/python"
 - **cvc5/z3/smt-switch 未找到**：主程序会到 `external/cvc5/build/`、`external/z3/`、`external/smt-switch/build/` 等找可执行文件；确保在项目根执行 `build_all_parsers.sh` 且无报错。
 - **无 root 且无 Docker**：若机器上有 Singularity/Apptainer，可后续做镜像把上述环境打进去，在无 root 的集群上同样用 `PYTHON` 和相对路径运行。
 
+---
+
+## 五、无 root 下“失败/跳过”的解决办法
+
+若 `./scripts/build_all_parsers.sh` 报 **cvc5 失败**、**haskell-0.0.2 跳过**、**smt-switch 跳过**，且服务器没有 root，可按下面做（全部用 Conda 或 ghcup 装到用户目录）。
+
+### 1. cvc5 失败
+
+**若报错：** `The source directory .../external/cvc5 does not appear to contain CMakeLists.txt`
+
+说明服务器上的 `external/cvc5` 缺少本仓库的包装器文件（此前 CMakeLists.txt 被 .gitignore 排除）。解决：从本机把 `external/cvc5/CMakeLists.txt`、`external/cvc5/cvc5_parser.cpp`、`external/cvc5/run.sh` 拷到服务器同一路径；或在本机提交并推送 CMakeLists.txt 后在服务器 `git pull`，再执行下面的编译。
+
+**若为预编译包 libcxx 的链接/编译失败：** 预编译包 `cvc5-Linux-*-libcxx-static` 需要 **clang++** 和 **libc++**。用 Conda 装到当前环境即可：
+
+```bash
+conda activate smtbench   # 或你的环境名
+conda install -c conda-forge clangxx -y
+```
+
+然后**指定用 clang + libc++** 再编译：
+
+```bash
+cd /path/to/Parser_Comparison
+USE_CLANG_LIBCXX=1 ./scripts/build_all_parsers.sh
+```
+
+若系统已有 clang++ 但脚本仍报错，也可先试 `USE_CLANG_LIBCXX=1 ./scripts/build_all_parsers.sh`。
+
+### 2. haskell-0.0.2 跳过（未找到 cabal）
+
+需要 GHC + Cabal，且**不需要 root**：用 [ghcup](https://www.haskell.org/ghcup/) 装到 `~/.ghcup`：
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
+# 按提示选默认即可；安装完成后按提示 source 环境（如 source ~/.ghcup/env）
+```
+
+然后安装 alex（二选一）：
+
+- **用 Cabal**：`cabal install alex`
+- **用 Conda**（更省事）：`conda activate smtbench && conda install -c conda-forge alex -y`
+
+最后重新编译：
+
+```bash
+source ~/.ghcup/env   # 若当前 shell 还没加载 ghcup
+./scripts/build_all_parsers.sh
+```
+
+### 3. smt-switch 跳过（检测到 cvc5 源码但尚未构建）
+
+脚本会优先用 `external/cvc5/` 下的**预编译包**（如 `cvc5-Linux-x86_64-libcxx-static`）。若服务器上这里没有预编译包，只有 `external/smt-switch/src/cvc5` 里的 cvc5 源码，就会提示“尚未构建”。
+
+**推荐做法**：在能下载的机器上把 cvc5 预编译包解压到 `external/cvc5/`，再把整个 `external/cvc5/` 拷到服务器同一路径（例如 rsync/scp）。然后按上面「cvc5 失败」装好 clangxx 并执行：
+
+```bash
+USE_CLANG_LIBCXX=1 ./scripts/build_all_parsers.sh
+```
+
+smt-switch 会自动用 `external/cvc5/` 下的预编译包，无需先编 cvc5 源码。
+
+**若必须从 cvc5 源码构建**（无预编译包可用）：
+
+1. 安装 bison、flex（Conda，无需 root）：
+   ```bash
+   conda activate smtbench
+   conda install -c conda-forge bison flex -y
+   ```
+2. 先单独编译 cvc5 源码（耗时会较长）：
+   ```bash
+   CVC5_SRC=/path/to/Parser_Comparison/external/smt-switch/src/cvc5
+   cd "$CVC5_SRC" && mkdir -p build && cd build && cmake .. && make -j$(nproc)
+   ```
+3. 再执行一键编译（此时会检测到已构建的 cvc5）：
+   ```bash
+   cd /path/to/Parser_Comparison
+   ./scripts/build_all_parsers.sh
+   ```
+
+---
+
 按上述步骤，所有依赖均可落在用户目录或项目内，实验可在无 root 的服务器上完整跑通。

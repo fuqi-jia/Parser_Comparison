@@ -86,7 +86,7 @@ external/cvc5/cvc5_parser
 external/cvc5/build/
 external/smt-switch/build/
 # ----------
-# cvc5 源码（克隆到 external/cvc5 后的仓库内容）
+# cvc5 源码（克隆到 external/cvc5 后的仓库内容；本仓库的 external/cvc5/CMakeLists.txt 为 cvc5_parser 包装器，已纳入版本控制）
 external/cvc5/.git/
 external/cvc5/build/
 external/cvc5/src/
@@ -100,7 +100,6 @@ external/cvc5/licenses/
 external/cvc5/proofs/
 external/cvc5/.github/
 external/cvc5/configure.sh
-external/cvc5/CMakeLists.txt
 external/cvc5/INSTALL.rst
 external/cvc5/NEWS.md
 external/cvc5/COPYING

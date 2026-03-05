@@ -38,6 +38,12 @@ run_build() {
 
 # cvc5: cvc5_parser (CMake + make)。预编译包名含 libcxx 时自动用 clang+libc++
 build_cvc5() {
+    if [ ! -f "$EXTERNAL_ROOT/cvc5/CMakeLists.txt" ]; then
+        echo "[SKIP] cvc5: external/cvc5 缺少 CMakeLists.txt"
+        echo "       请从仓库或本机同步 external/cvc5 下的 CMakeLists.txt、cvc5_parser.cpp、run.sh 等（预编译包 cvc5-Linux-*-libcxx-static 需单独解压到该目录）"
+        SKIP+=("cvc5")
+        return
+    fi
     if [ ! -f "$EXTERNAL_ROOT/cvc5/cvc5_parser.cpp" ]; then
         echo "[SKIP] cvc5: 无 cvc5_parser.cpp"
         SKIP+=("cvc5")
