@@ -4,6 +4,7 @@
 # 从项目根运行: ./scripts/run_parallel.sh
 # 只跑单个 parser 并更新主表: PARSER=cvc5 ./scripts/run_parallel.sh
 # 排除若干 parser（如先不跑 Java）: EXCLUDE_PARSER=antlr4,z3 ./scripts/run_parallel.sh
+# 之后可用 PARSER=xxx 补跑被排除的 parser，结果会合并进同一主表。
 # 查看进度: tail -f results/benchmark_main.log
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
