@@ -98,6 +98,7 @@ build_cvc5() {
         OK+=("cvc5")
     else
         echo "[FAIL] cvc5"
+        echo "       若为 __isoc23_* 未定义（系统 glibc < 2.38），请从源码构建: BUILD_CVC5_FROM_SOURCE=1 ./scripts/download.sh --parsers-only && ./scripts/build_cvc5_from_source.sh"
         FAIL+=("cvc5")
     fi
 }
@@ -154,9 +155,11 @@ build_haskell() {
 # smt-switch: 需 CVC5_HOME 或自动检测。与 cvc5_parser 共用同一份预编译包（放在 external/cvc5/ 即可，无需在 smt-switch 下再放一份）
 build_smt_switch() {
     if [ -z "${CVC5_HOME:-}" ]; then
-        # 优先：external/cvc5 下预编译包（与 cvc5_parser 共用）
-        PREBUILT=$(ls -d "$EXTERNAL_ROOT/cvc5"/cvc5-* 2>/dev/null | head -1)
-        if [ -n "$PREBUILT" ] && [ -f "$PREBUILT/lib/libcvc5.a" ] && [ -f "$PREBUILT/include/cvc5/cvc5.h" ]; then
+        # 优先：cvc5-install（从源码构建），其次预编译包 cvc5-Linux-* 等
+        if [ -f "$EXTERNAL_ROOT/cvc5/cvc5-install/lib/libcvc5.a" ] && [ -f "$EXTERNAL_ROOT/cvc5/cvc5-install/include/cvc5/cvc5.h" ]; then
+            CVC5_HOME="$EXTERNAL_ROOT/cvc5/cvc5-install"
+            echo "[smt-switch] 使用 cvc5-install: $CVC5_HOME"
+        elif PREBUILT=$(ls -d "$EXTERNAL_ROOT/cvc5"/cvc5-Linux-* "$EXTERNAL_ROOT/cvc5"/cvc5-*-static 2>/dev/null | head -1) && [ -n "$PREBUILT" ] && [ -f "$PREBUILT/lib/libcvc5.a" ] && [ -f "$PREBUILT/include/cvc5/cvc5.h" ]; then
             CVC5_HOME="$PREBUILT"
             echo "[smt-switch] 使用 cvc5 预编译包: $CVC5_HOME"
         # 否则：本仓库内 cvc5 源码（需已在该目录执行过 cmake+make）
@@ -187,10 +190,13 @@ build_smt_switch() {
     # 源码目录：若本目录有 CMakeLists.txt（仓库包装器）则用 ..，否则用 ../smt-switch-1.0.6（仅下载解压时，因 CMakeLists.txt 被 gitignore）
     SMT_SWITCH_SRC=".."
     [ -f "$EXTERNAL_ROOT/smt-switch/CMakeLists.txt" ] || SMT_SWITCH_SRC="../smt-switch-1.0.6"
-    # 预编译包为 libcxx 时需 clang+libc++（仅设置 CXX，避免 C 编译器测试收到 -stdlib=libc++）
+    # 预编译包为 libcxx 时需 clang+libc++；使用 cvc5 预编译包时需让 FindPoly 等找到 lib（CMAKE_PREFIX_PATH）
     EXTRA_CMAKE=""
-    if [ -f "${CVC5_HOME}/lib/libcvc5.a" ] && echo "$CVC5_HOME" | grep -q libcxx && command -v clang++ &>/dev/null; then
-        EXTRA_CMAKE="-DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS=-stdlib=libc++"
+    if [ -f "${CVC5_HOME}/lib/libcvc5.a" ]; then
+        EXTRA_CMAKE="-DCMAKE_PREFIX_PATH=${CVC5_HOME}"
+        if echo "$CVC5_HOME" | grep -q libcxx && command -v clang++ &>/dev/null; then
+            EXTRA_CMAKE="$EXTRA_CMAKE -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_CXX_FLAGS=-stdlib=libc++"
+        fi
     fi
     if ( cd "$EXTERNAL_ROOT/smt-switch" && mkdir -p build && cd build && \
          cmake "$SMT_SWITCH_SRC" \
