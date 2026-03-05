@@ -1,12 +1,27 @@
-# 重跑结果：成功写回主表，recheck 只存仍 fail/timeout
+# 重跑结果：写回主表与断点续跑
 
 ## 当前逻辑
 
-- **主表**：`results/parser_benchmark_table_sampled.csv`。重跑时若指定 `--table 主表路径`，**每条重跑结果都会直接更新主表对应行**（成功与失败都写回）。
-- **recheck**：`results/parser_benchmark_recheck_sampled.csv`。**仅重跑后仍为 fail/timeout 的条目会追加到 recheck**，成功的不再保存到 recheck。
+- **主表**：`results/parser_benchmark_table_sampled.csv`。重跑时若指定 `--table 主表路径`，**每条重跑结果都会直接更新主表对应行**（成功与失败都写回）；且**每完成一条就写回磁盘**，中途崩溃也不会丢已跑完的。
+- **recheck**：`results/parser_benchmark_recheck_sampled.csv`。**每条重跑结果都会追加到 recheck**（含成功与 fail/timeout），用于**断点续跑**：再次执行同一命令时，会跳过 recheck 里已有的 (file, parser)，只跑未完成的。
 - **Summary**：直接按主表生成（`gen_summary_table.py --input 主表 --output-dir results/summary`），**不再需要** `--update-from-recheck`。
 
-这样主表是唯一数据源，recheck 只作“仍有问题的个案”留底。
+## 中途崩溃怎么继续
+
+默认就是**断点续跑**（`--resume`）：  
+再次执行**同一条命令**即可，不要加 `--fresh`。
+
+```bash
+./scripts/run_re_run_benchmark.sh --only-parser cvc5 \
+  benchmark/sampled/file_list.txt \
+  results/parser_benchmark_checkpoint_sampled.csv \
+  results/parser_benchmark_recheck_sampled.csv \
+  results/parser_benchmark_table_sampled.csv \
+  results/summary
+```
+
+- 已完成的 (file, parser) 会从 recheck 里读出，**先合并回主表**（把崩溃前跑完的那部分写进主表），再只跑「待跑」的那部分。
+- 每跑完一条会：更新主表并写回磁盘、追加该条到 recheck。所以再崩一次，再执行同一命令即可继续。
 
 ## 单独重跑 native 并更新表
 

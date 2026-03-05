@@ -259,7 +259,7 @@ def main():
     )
     ap.add_argument("--file-list", type=Path, required=True, help="一行一个 .smt2 路径（如 benchmark/sampled/file_list.txt）")
     ap.add_argument("--checkpoint", type=Path, default=None, help="现有 checkpoint，用于 --only-fail 时筛选待重跑对；全量重跑时可选")
-    ap.add_argument("--recheck-out", type=Path, default=None, help="输出重跑结果 CSV（默认 results/parser_benchmark_recheck_sampled.csv）；仅 fail/timeout 会写入，成功的写回主表")
+    ap.add_argument("--recheck-out", type=Path, default=None, help="输出重跑结果 CSV；每条结果都会追加（供断点续跑），成功同时写回主表")
     ap.add_argument("--table", type=Path, default=None, help="主表 CSV 路径；若指定，每条重跑结果会直接更新主表对应行，成功的不再写入 recheck")
     ap.add_argument("--only-fail", action="store_true", help="仅重跑 checkpoint 中 status=fail 或 timeout 的 (file, parser)，用于纠正误判")
     ap.add_argument("--only-parser", type=str, action="append", default=None, metavar="NAME", help="只重跑指定 parser（可多次指定，如 --only-parser native）；不指定则重跑全部 parser")
@@ -343,8 +343,7 @@ def main():
             todo = [(f, p) for f, p in todo if (p, extract_theory(f)) not in exclude_parser_theory]
             print("已排除已知不支持 (parser,theory): {} 条，待跑 {} 条".format(n_before - len(todo), len(todo)), flush=True)
 
-    # 断点续跑：从已有 recheck 文件加载已完成的 (file, parser)，只跑未完成的
-    # 若指定了 --only-parser，则该 parser 的条目不因 recheck 已有而跳过，强制重跑（便于纠正仍 timeout/fail 的个案）
+    # 断点续跑：从已有 recheck 文件加载已完成的 (file, parser)，只跑未完成的（含 --only-parser 时也跳过 recheck 中已有的，这样崩溃后再跑会从未完成处继续）
     done_recheck = set()
     if args.resume and args.recheck_out.exists():
         try:
@@ -356,16 +355,10 @@ def main():
         except Exception:
             pass
         if done_recheck:
-            only_parser_set = set(args.only_parser) if args.only_parser else set()
-            if only_parser_set:
-                todo = [(f, p) for f, p in todo if (f, p) not in done_recheck or p in only_parser_set]
-                print("断点续跑: 已跳过 {} 条（本次 parser {} 强制重跑，不跳过）".format(len(done_recheck), list(only_parser_set)), flush=True)
-                print("待跑 {} 条".format(len(todo)), flush=True)
-            else:
-                todo = [(f, p) for f, p in todo if (f, p) not in done_recheck]
-                print("断点续跑: 已跳过 {} 条，待跑 {} 条".format(len(done_recheck), len(todo)), flush=True)
-                if len(todo) == 0 and args.only_fail:
-                    print("（recheck 中已包含本轮全部 fail/timeout，故无需重跑）", flush=True)
+            todo = [(f, p) for f, p in todo if (f, p) not in done_recheck]
+            print("断点续跑: 已跳过 {} 条，待跑 {} 条".format(len(done_recheck), len(todo)), flush=True)
+            if len(todo) == 0 and args.only_fail:
+                print("（recheck 中已包含本轮全部 fail/timeout，故无需重跑）", flush=True)
 
     if args.dry_run:
         print("dry-run: 将运行 {} 条".format(len(todo)), flush=True)
@@ -375,15 +368,25 @@ def main():
         return 0
 
     # 若指定 --table，预加载主表，重跑结果直接写回主表；成功的不再写入 recheck
+    # 若主表行数过少（如被误覆盖），用 checkpoint 重新初始化，避免写回残缺表导致散点图「无共同实例」
     table_rows = None
     table_fieldnames = None
+    MIN_TABLE_ROWS = 5000
     if args.table and args.table.exists():
         try:
             with open(args.table, "r", encoding="utf-8", newline="") as f:
                 r = csv.DictReader(f)
                 table_fieldnames = r.fieldnames
                 table_rows = list(r)
-            print("已加载主表 {} 行，重跑成功将直接写回主表".format(len(table_rows)), flush=True)
+            n_loaded = len(table_rows)
+            if n_loaded < MIN_TABLE_ROWS and args.checkpoint and Path(args.checkpoint).exists():
+                _, checkpoint_rows = load_checkpoint(args.checkpoint)
+                if checkpoint_rows and len(checkpoint_rows) >= MIN_TABLE_ROWS:
+                    table_rows = checkpoint_rows
+                    table_fieldnames = table_fieldnames or ["file", "parser", "status", "time_ms", "memory_kb", "ast_nodes"]
+                    print("主表仅 {} 行，已用 checkpoint 重新初始化（{} 行）".format(n_loaded, len(checkpoint_rows)), flush=True)
+            if table_rows:
+                print("已加载主表 {} 行，重跑成功将直接写回主表".format(len(table_rows)), flush=True)
         except Exception as e:
             print("警告: 无法加载主表 {}，将不写回: {}".format(args.table, e), file=sys.stderr, flush=True)
             table_rows = None
@@ -427,6 +430,43 @@ def main():
                     pass
                 table_key_to_index[(f, p)] = idx
 
+    # 断点续跑时先把 recheck 里已有结果合并回主表，避免崩溃后主表缺已跑完的那部分
+    if args.resume and args.recheck_out.exists() and table_rows is not None and table_key_to_index is not None and done_recheck:
+        recheck_updates = {}
+        try:
+            with open(args.recheck_out, "r", encoding="utf-8", newline="") as f:
+                for row in csv.DictReader(f):
+                    try:
+                        fpath = (row.get("file") or "").strip()
+                        key = (str(Path(fpath).resolve()), (row.get("parser") or "").strip())
+                    except Exception:
+                        key = ((row.get("file") or "").strip(), (row.get("parser") or "").strip())
+                    if key[0] and key[1]:
+                        recheck_updates[key] = row
+        except Exception:
+            pass
+        for raw_key in done_recheck:
+            try:
+                key = (str(Path(raw_key[0]).resolve()), raw_key[1])
+            except Exception:
+                key = raw_key
+            if key in table_key_to_index and key in recheck_updates:
+                r = recheck_updates[key]
+                row = table_rows[table_key_to_index[key]]
+                row["status"] = (r.get("status") or "").strip()
+                row["time_ms"] = (r.get("time_ms") or "").strip()
+                row["memory_kb"] = (r.get("memory_kb") or "").strip()
+                row["ast_nodes"] = (r.get("ast_nodes") or "").strip()
+        try:
+            with open(args.table, "w", encoding="utf-8", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=table_fieldnames)
+                w.writeheader()
+                w.writerows(table_rows)
+            print("已用 recheck 中 {} 条恢复主表（断点续跑）".format(len(done_recheck)), flush=True)
+        except Exception as e:
+            print("警告: 恢复主表失败: {}".format(e), file=sys.stderr, flush=True)
+
+    print("开始重跑 {} 条...".format(len(todo)), flush=True)
     for i, (file_path, parser_name) in enumerate(todo):
         status, time_ms, memory_kb, ast_nodes = run_one(binary, file_path, parser_name, args.timeout, args.memory_mb)
         # 直接更新主表对应行
@@ -439,11 +479,19 @@ def main():
                 row["time_ms"] = str(time_ms) if time_ms not in (None, "") else ""
                 row["memory_kb"] = str(memory_kb) if memory_kb not in (None, "") else ""
                 row["ast_nodes"] = str(ast_nodes) if ast_nodes not in (None, "") else ""
-        # 仅 fail/timeout 写入 recheck，成功的不再保存到 recheck
-        if (status or "").strip().lower() not in ("ok",):
-            with open(args.recheck_out, "a", encoding="utf-8", newline="") as f:
-                csv.writer(f).writerow([file_path, parser_name, status, time_ms, memory_kb, ast_nodes])
-                f.flush()
+        # 每条结果都追加到 recheck，便于断点续跑（崩溃后再次执行同一命令会跳过 recheck 中已有的 (file,parser)）
+        with open(args.recheck_out, "a", encoding="utf-8", newline="") as f:
+            csv.writer(f).writerow([file_path, parser_name, status, time_ms, memory_kb, ast_nodes])
+            f.flush()
+        # 每完成一条就写回主表，崩溃后已跑完的不丢
+        if table_rows is not None and table_fieldnames and args.table:
+            try:
+                with open(args.table, "w", encoding="utf-8", newline="") as f:
+                    w = csv.DictWriter(f, fieldnames=table_fieldnames)
+                    w.writeheader()
+                    w.writerows(table_rows)
+            except Exception:
+                pass
         print("[{}/{}] {} | {} -> {}  {} ms  {} KB  nodes={}".format(
             len(done_recheck) + i + 1, len(done_recheck) + len(todo), parser_name, Path(file_path).name[:40], status, time_ms, memory_kb, ast_nodes
         ), flush=True)
@@ -458,7 +506,7 @@ def main():
         except Exception as e:
             print("错误: 写回主表失败: {}".format(e), file=sys.stderr, flush=True)
 
-    print("重跑结果：成功已写回主表，仍 fail/timeout 的已追加到 {}".format(args.recheck_out), flush=True)
+    print("重跑结果：已写回主表并追加到 {}（断点续跑：再次执行同一命令将跳过已完成）".format(args.recheck_out), flush=True)
     if args.table:
         print("可用: python3 scripts/gen_summary_table.py --input {} --output-dir results/summary".format(args.table), flush=True)
     else:

@@ -236,15 +236,21 @@ class PySMTParser : public ExternalParser {
 private:
     std::string python_path;
     
-    // 查找可用的Python路径
+    // 查找可用的Python路径（优先环境变量 PYTHON，便于服务器/conda 无 root 部署）
     std::string findPythonPath() {
+        const char* env_py = std::getenv("PYTHON");
+        if (env_py && env_py[0] != '\0') {
+            std::string cand(env_py);
+            try {
+                std::string check_cmd = cand + " -c \"import pysmt; print('OK')\" 2>/dev/null";
+                std::string result = exec(check_cmd);
+                if (result.find("OK") != std::string::npos) return cand;
+            } catch (...) { /* fall through */ }
+        }
         std::vector<std::string> candidates = {
-            "/home/fuqi/anaconda3/envs/smt/bin/python",  // 您的conda环境
-            "/home/fuqi/anaconda3/bin/python",           // anaconda base环境
-            "python3",                                   // 系统python3
-            "python"                                     // 系统python
+            "python3",
+            "python"
         };
-        
         for (const auto& candidate : candidates) {
             try {
                 std::string check_cmd = candidate + " -c \"import pysmt; print('OK')\" 2>/dev/null";

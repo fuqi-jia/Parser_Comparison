@@ -41,19 +41,20 @@
 - `results/parser_benchmark_recheck_sampled.csv`
 - `results/summary/`（含 `frontend_table.tex`）
 
-## 在服务器 / 非 WSL 环境运行（后续 Docker 等）
+## 在服务器 / 非 WSL 环境运行
 
 当前脚本仅依赖：
 
 - Bash、Python 3
 - 项目内已编译的 `smt_parser_comparison`（或 `build/smt_parser_comparison`）及各 parser 所需环境（见 `scripts/build_all_parsers.sh`、`scripts/download.sh`）
 
-若要在**纯 Linux 服务器**（无 WSL）上跑同样的 sampled 流程，可以：
+若要在**纯 Linux 服务器**上跑同样的 sampled 流程，可以：
 
-1. **直接迁移**：将整个项目（含 `benchmark/sampled/files` 或至少 manifest + 源 benchmark）拷到服务器，安装依赖、编译后执行：
+1. **无 root 服务器**：各 external parser 依赖不一（Python/Java/C++/Haskell），可用**用户空间**统一解决，无需 sudo。详见 [server_setup_no_root.md](server_setup_no_root.md)。推荐：
+   - 运行 `./scripts/setup_server_env.sh` 用 Conda 创建 Python+pysmt+Java 环境；
+   - 设置 `export PYTHON=/path/to/conda/env/bin/python` 后执行 `./scripts/run_sampled_full.sh`。
+2. **直接迁移**：将整个项目（含 `benchmark/sampled/files` 或至少 manifest + 源 benchmark）拷到服务器，安装依赖、编译后执行：
    ```bash
    ./scripts/run_sampled_full.sh
    ```
-2. **Docker（后续）**：可做一份 Dockerfile，基于 Ubuntu 等，在镜像内执行 `download.sh`（或仅 benchmark 部分）、`build_all_parsers.sh`、再执行 `run_sampled_full.sh`，将 `results/` 挂载或拷贝出来。需要时再单独写 Dockerfile 与 `docker-compose`。
-
-本说明在「一键脚本」完成后编写，Docker 化可在此基础上扩展。
+3. **Docker（后续）**：可做一份 Dockerfile，在镜像内执行 `download.sh`、`build_all_parsers.sh`、`run_sampled_full.sh`，将 `results/` 挂载或拷贝出来。
