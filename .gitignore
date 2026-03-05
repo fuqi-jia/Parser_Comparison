@@ -154,6 +154,9 @@ external/smt-switch/smt-switch-*/
 !external/smt-switch/smt-switch-1.0.6/
 external/smt-switch/smt-switch-1.0.6/*
 !external/smt-switch/smt-switch-1.0.6/CMakeLists.txt
+!external/smt-switch/smt-switch-1.0.6/cvc5/
+external/smt-switch/smt-switch-1.0.6/cvc5/*
+!external/smt-switch/smt-switch-1.0.6/cvc5/CMakeLists.txt
 
 # results
 !results/logs/*.log
