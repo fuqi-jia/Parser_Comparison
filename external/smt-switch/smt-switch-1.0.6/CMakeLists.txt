@@ -155,9 +155,6 @@ else()
 endif()
 
 add_library(smt-switch "${SMT_SWITCH_LIB_TYPE}" ${SOURCES})
-if (SMTLIB_READER)
-  add_dependencies(smt-switch SmtLibParser)
-endif()
 target_include_directories(smt-switch PUBLIC ${INCLUDE_DIRS})
 
 set(THREADS_PREFER_PTHREAD_FLAG True)
