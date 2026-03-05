@@ -258,8 +258,8 @@ def main():
     ap.add_argument("--table", type=Path, default=TABLE_CSV)
     ap.add_argument("--table-wide", type=Path, default=TABLE_WIDE_CSV)
     ap.add_argument("--log-dir", type=Path, default=None)
-    ap.add_argument("--jobs", "-j", type=int, default=200,
-                    help="并行任务数（默认 200，适合 256 核服务器）")
+    ap.add_argument("--jobs", "-j", type=int, default=24,
+                    help="并行任务数（默认 24，避免打满 CPU；大机器可设 JOBS=64 等）")
     ap.add_argument("--exclude-parser", type=str, action="append", default=None, metavar="NAME",
                     help="排除指定 parser，不参与 benchmark（可多次指定，如 --exclude-parser native）")
     ap.add_argument("--only-parser", type=str, default=None, metavar="NAME",
