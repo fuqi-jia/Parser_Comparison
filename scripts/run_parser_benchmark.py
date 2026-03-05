@@ -19,6 +19,7 @@ import csv
 import argparse
 import subprocess
 import resource
+import signal
 from pathlib import Path
 from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -63,6 +64,31 @@ def get_parser_list(binary):
         return names if names else None
     except Exception:
         return None
+
+
+def _kill_children_process_groups(pid):
+    """杀 pid 的直接子进程所在进程组，避免 smt_parser_comparison 被 kill 后留下孤儿 parser。"""
+    try:
+        path = Path("/proc") / str(pid) / "task" / str(pid) / "children"
+        if path.exists():
+            text = path.read_text().strip()
+            child_pids = [int(x) for x in text.split() if x.strip().isdigit()]
+        else:
+            out = subprocess.run(
+                ["ps", "-o", "pid=", "--ppid", str(pid)],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            child_pids = [int(x) for x in (out.stdout or "").strip().split() if x.strip().isdigit()]
+    except Exception:
+        child_pids = []
+    for c in child_pids:
+        try:
+            pgid = os.getpgid(c)
+            os.killpg(pgid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
 
 
 def load_file_list(path):
@@ -202,20 +228,33 @@ def run_one(binary, file_path, parser_name, timeout_sec, memory_mb):
                     resource.setrlimit(resource.RLIMIT_AS, (as_bytes, as_bytes))
                 except (ValueError, resource.error):
                     pass
-            proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True,
-                                  timeout=PROCESS_TIMEOUT_SEC, env=env, preexec_fn=set_limits)
+            proc = subprocess.Popen(
+                cmd, cwd=str(REPO_ROOT), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, env=env, preexec_fn=set_limits,
+            )
         else:
-            proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True, text=True,
-                                  timeout=PROCESS_TIMEOUT_SEC, env=env)
-        status, time_ms, memory_kb, ast_nodes = parse_test_output(proc.stdout, proc.stderr)
+            proc = subprocess.Popen(
+                cmd, cwd=str(REPO_ROOT), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, env=env,
+            )
+        try:
+            stdout, stderr = proc.communicate(timeout=PROCESS_TIMEOUT_SEC)
+        except subprocess.TimeoutExpired:
+            # 先杀 smt_parser_comparison 的子进程所在进程组（sh + cvc5_parser 等），再杀主进程，避免孤儿
+            _kill_children_process_groups(proc.pid)
+            try:
+                proc.kill()
+                proc.wait()
+            except Exception:
+                pass
+            return "timeout", str(timeout_sec * 1000), "", ""
+        status, time_ms, memory_kb, ast_nodes = parse_test_output(stdout, stderr)
         if proc.returncode != 0 and status == "ok":
             status = "fail"
-        if not time_ms and "命令执行超时" in (proc.stderr or "") + (proc.stdout or ""):
+        if not time_ms and "命令执行超时" in (stderr or "") + (stdout or ""):
             status = "timeout"
             time_ms = str(timeout_sec * 1000)
         return status, time_ms or "", memory_kb or "", ast_nodes or ""
-    except subprocess.TimeoutExpired:
-        return "timeout", str(timeout_sec * 1000), "", ""
     except Exception as e:
         return "error", "", "", str(e)[:200]
 

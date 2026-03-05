@@ -11,6 +11,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+# 启动前先清理本项目的残留进程（孤儿 parser 等），避免悬空进程累积；跳过清理可设 SKIP_CLEAN=1
+if [ -z "${SKIP_CLEAN:-}" ]; then
+  echo "清理残留 benchmark 进程..."
+  "$SCRIPT_DIR/kill.sh" 2>/dev/null || true
+fi
+
 # 路径（可通过环境变量覆盖）；默认使用全集 benchmark/non-incremental
 FILE_LIST="${FILE_LIST:-results/file_list.txt}"
 BENCHMARK_DIR="${BENCHMARK_DIR:-benchmark/non-incremental}"

@@ -82,6 +82,9 @@ ProcessRunResult ProcessRunner::run(const std::string& cmd, int timeout_sec) {
         dup2(stderr_pipe[1], STDERR_FILENO);
         close(stdout_pipe[1]);
         close(stderr_pipe[1]);
+        // 子进程自成进程组，这样 sh 再 fork 的 parser（如 cvc5_parser）同属该组；
+        // 超时时 kill(-pid) 可杀整组，避免只杀 sh 导致 parser 悬空。
+        (void)setpgid(0, 0);
         execl("/bin/sh", "sh", "-c", cmd.c_str(), (char*)nullptr);
         _exit(127);
     }
@@ -120,7 +123,8 @@ ProcessRunResult ProcessRunner::run(const std::string& cmd, int timeout_sec) {
 
         auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
         if (timeout_sec > 0 && elapsed >= timeout_sec) {
-            kill(pid, SIGKILL);
+            // 杀整组（sh + 其子进程如 cvc5_parser），避免只杀 sh 留下孤儿 parser
+            kill(-pid, SIGKILL);
             waitpid(pid, &status, 0);
             res.timed_out = true;
             break;
