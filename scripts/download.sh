@@ -49,9 +49,9 @@ download_url() {
         return 0
     fi
     if command -v wget &>/dev/null; then
-        wget -q -O "$out" "$url" || { echo "wget 失败: $url"; return 1; }
+        wget -q -O "$out" "$url" || { echo "wget 失败: $url"; rm -f "$out"; return 1; }
     elif command -v curl &>/dev/null; then
-        curl -sL -o "$out" "$url" || { echo "curl 失败: $url"; return 1; }
+        curl -sL -o "$out" "$url" || { echo "curl 失败: $url"; rm -f "$out"; return 1; }
     else
         echo "需要 wget 或 curl"; exit 1
     fi
@@ -113,17 +113,31 @@ do_parsers() {
             echo "-------- cvc5 预编译包 (GitHub Releases, Linux libcxx-static) --------"
             CVC5_DEST="$EXTERNAL/cvc5"
             CVC5_ARC="$CVC5_DEST/cvc5-prebuilt.tar.gz"
-            # 发布页与资产名见 https://github.com/cvc5/cvc5/releases（标签可能为 1.3.3 或 cvc5-1.3.3）
-            for CVC5_RELEASE_TAG in "1.3.3" "cvc5-1.3.3"; do
-              CVC5_PREBUILT_NAME="cvc5-1.3.3-x86_64-Linux-libcxx-static.tar.gz"
-              if download_url "https://github.com/cvc5/cvc5/releases/download/${CVC5_RELEASE_TAG}/${CVC5_PREBUILT_NAME}" "$CVC5_ARC"; then
-                break
-              fi
-            done
+            # 若之前下载失败留下无效文件，删除以便重试（有效 gzip 才保留）
             if [ -f "$CVC5_ARC" ]; then
-                if extract_tar_gz "$CVC5_ARC" "$CVC5_DEST"; then
+                if ! gzip -t "$CVC5_ARC" 2>/dev/null; then
+                    rm -f "$CVC5_ARC"
+                fi
+            fi
+            # 发布页见 https://github.com/cvc5/cvc5/releases ，尝试多种标签与资产名
+            CVC5_DOWNLOADED=""
+            for CVC5_RELEASE_TAG in "1.3.3" "cvc5-1.3.3"; do
+              for CVC5_PREBUILT_NAME in \
+                "cvc5-1.3.3-x86_64-Linux-libcxx-static.tar.gz" \
+                "cvc5-1.3.3-x86_64-unknown-linux-gnu-libcxx-static.tar.gz" \
+                "cvc5-Linux-x86_64-libcxx-static.tar.gz"; do
+                if download_url "https://github.com/cvc5/cvc5/releases/download/${CVC5_RELEASE_TAG}/${CVC5_PREBUILT_NAME}" "$CVC5_ARC"; then
+                  CVC5_DOWNLOADED=1
+                  break 2
+                fi
+              done
+            done
+            if [ -n "$CVC5_DOWNLOADED" ] && [ -f "$CVC5_ARC" ]; then
+                if gzip -t "$CVC5_ARC" 2>/dev/null && extract_tar_gz "$CVC5_ARC" "$CVC5_DEST"; then
                     rm -f "$CVC5_ARC"
                     echo "[OK] cvc5 预编译包已解压到 $EXTERNAL/cvc5/"
+                else
+                    rm -f "$CVC5_ARC"
                 fi
             fi
             if ! ls -d "$EXTERNAL/cvc5"/cvc5-Linux-* "$EXTERNAL/cvc5"/cvc5-*-static 2>/dev/null | head -1 | grep -q .; then
@@ -162,10 +176,25 @@ do_parsers() {
                 rm -f "$SS_ARC"
             fi
         fi
-        if download_url "https://github.com/stanford-centaur/smt-switch/archive/refs/tags/${SMT_SWITCH_TAG}.tar.gz" "$SS_ARC"; then
+        # 尝试 tag 1.0.6 或 v1.0.6（解压后目录均为 smt-switch-1.0.6）
+        SS_DOWNLOADED=""
+        for SS_TAG in "${SMT_SWITCH_TAG}" "v${SMT_SWITCH_TAG}"; do
+            if download_url "https://github.com/stanford-centaur/smt-switch/archive/refs/tags/${SS_TAG}.tar.gz" "$SS_ARC"; then
+                SS_DOWNLOADED=1
+                break
+            fi
+        done
+        if [ -n "$SS_DOWNLOADED" ]; then
             if extract_tar_gz "$SS_ARC" "$EXTERNAL/smt-switch"; then
                 rm -f "$SS_ARC"
-                [ -d "$EXTERNAL/smt-switch/smt-switch-${SMT_SWITCH_TAG}" ] && echo "[OK] smt-switch 已解压"
+                if [ -d "$EXTERNAL/smt-switch/smt-switch-${SMT_SWITCH_TAG}" ]; then
+                    echo "[OK] smt-switch 已解压"
+                elif [ -d "$EXTERNAL/smt-switch/smt-switch-v${SMT_SWITCH_TAG}" ]; then
+                    mv "$EXTERNAL/smt-switch/smt-switch-v${SMT_SWITCH_TAG}" "$EXTERNAL/smt-switch/smt-switch-${SMT_SWITCH_TAG}"
+                    echo "[OK] smt-switch 已解压（已重命名为 smt-switch-${SMT_SWITCH_TAG}）"
+                else
+                    echo "[OK] smt-switch 已解压"
+                fi
             else
                 echo "[失败] 解压 smt-switch 失败，可删除 $SS_ARC 后重新运行本脚本"
             fi
