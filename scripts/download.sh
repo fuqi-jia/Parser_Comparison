@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 一键安装：external 下各 parser 所需依赖/源码下载 + SMT-LIB benchmark 下载与解压
-# 用法: ./scripts/download.sh [--parsers-only] [--benchmark-only] [--theories QF_LIA,QF_BV,...]
+# 用法: ./scripts/download.sh [--parsers-only] [--benchmark-only] [--theories QF_LIA,...] [--all-theories] [--jobs N]
 # 下载来源:
 #   cvc5:       https://github.com/cvc5/cvc5 (Releases 源码)
 #   z3:         https://github.com/Z3Prover/z3 (Releases 源码)
@@ -20,6 +20,11 @@ BENCHMARK="$REPO_ROOT/benchmark"
 ZENODO_RECORD="16740866"
 # 与 sample_benchmarks.py 默认 theory 一致
 DEFAULT_THEORIES="QF_LIA,QF_LRA,QF_NIA,QF_NRA,QF_BV,QF_FP,QF_S,QF_AX"
+# SMT-LIB non-incremental 全部分区（与 Zenodo 该记录提供的 .tar.zst 对应，缺的会下载失败跳过）
+ALL_THEORIES="QF_ABV,QF_ALIA,QF_ANIA,QF_AUFBV,QF_AUFLIA,QF_AUFLIRA,QF_AX,QF_BV,QF_BVFP,QF_FP,QF_IDL,QF_LIA,QF_LRA,QF_NIA,QF_NRA,QF_RDL,QF_S,QF_UF,QF_UFBV,QF_UFIDL,QF_UFLIA,QF_UFLRA,QF_UFNIA,QF_UFNRA"
+
+# benchmark 下载/解压并行数（仅解压阶段并行，默认 200，适合 256 核）
+BENCHMARK_JOBS=1
 
 # 各 parser 源码版本（可从 GitHub Releases 页更新）
 CVC5_TAG="cvc5-1.3.3"
@@ -35,6 +40,8 @@ while [ $# -gt 0 ]; do
         --parsers-only)   DO_BENCHMARK=0; shift ;;
         --benchmark-only) DO_PARSERS=0; shift ;;
         --theories)       THEORIES_STR="$2"; shift 2 ;;
+        --all-theories)   THEORIES_STR="$ALL_THEORIES"; shift ;;
+        --jobs)           BENCHMARK_JOBS="$2"; shift 2 ;;
         *) echo "未知选项: $1"; exit 1 ;;
     esac
 done
@@ -266,9 +273,13 @@ do_benchmark() {
     UNPACKED="$BENCHMARK/non-incremental"
     mkdir -p "$UNPACKED"
 
+    JOBS="${BENCHMARK_JOBS:-1}"
+    JOBS=$((JOBS > 0 ? JOBS : 1))
+
+    # 第一阶段：下载（顺序，避免 Zenodo 限流）
+    NEED_EXTRACT=()
     for th in "${THEORIES[@]}"; do
         [ -z "$th" ] && continue
-        # Zenodo 文件名中 _ 编码为 %5F
         name="${th//_/%5F}"
         base="${th}.tar.zst"
         url="https://zenodo.org/records/${ZENODO_RECORD}/files/${name}.tar.zst?download=1"
@@ -278,17 +289,47 @@ do_benchmark() {
             continue
         fi
         arc="$BENCHMARK/$base"
-        echo "-------- $th --------"
+        echo "-------- $th (下载) --------"
         if download_url "$url" "$arc"; then
+            NEED_EXTRACT+=("$arc")
+        else
+            echo "[下载失败] $th ($url)"
+        fi
+    done
+
+    # 第二阶段：解压（可并行）
+    if [ ${#NEED_EXTRACT[@]} -eq 0 ]; then
+        echo "无待解压包"
+    elif [ "$JOBS" -le 1 ]; then
+        for arc in "${NEED_EXTRACT[@]}"; do
+            th=$(basename "$arc" .tar.zst)
+            th="${th//%5F/_}"
+            echo "-------- $th (解压) --------"
             if extract_tar_zst "$arc" "$UNPACKED"; then
                 echo "[OK] $th"
             else
                 echo "[解压失败] $th"
             fi
-        else
-            echo "[下载失败] $th ($url)"
-        fi
-    done
+        done
+    else
+        echo "并行解压 ${#NEED_EXTRACT[@]} 个包，并发数 $JOBS ..."
+        for arc in "${NEED_EXTRACT[@]}"; do
+            while [ "$(jobs -r 2>/dev/null | wc -l)" -ge "$JOBS" ]; do
+                sleep 0.2
+            done
+            th=$(basename "$arc" .tar.zst)
+            th="${th//%5F/_}"
+            (
+                if extract_tar_zst "$arc" "$UNPACKED"; then
+                    echo "[OK] $th"
+                else
+                    echo "[解压失败] $th" >&2
+                fi
+            ) &
+        done
+        wait
+        echo "解压阶段结束"
+    fi
     echo ""
 }
 
