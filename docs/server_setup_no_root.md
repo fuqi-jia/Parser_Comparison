@@ -76,12 +76,14 @@ export PYTHON="$HOME/miniconda3/envs/smtbench/bin/python"
 
 - **cvc5**、**z3**、**smt-switch**：用 `scripts/build_all_parsers.sh` 在项目内编译即可，可执行文件在 `external/*/build/` 下，主程序会到这些路径找，**不需要** `make install` 或 root。
 - 若系统没有 cmake/g++：可用 `conda install -c conda-forge cmake compilers`，再在激活该环境的情况下执行 `build_all_parsers.sh`。
-- cvc5 若用 libcxx 预编译包：需本机有 clang 和 libc++；无 root 时可用 conda：`conda install -c conda-forge clangxx`。
+- **cvc5 推荐用预编译包**（无需自己编 cvc5）：先运行 `./scripts/download.sh --parsers-only`，脚本会尝试下载 Linux libcxx-static 并解压到 `external/cvc5/`；若失败，请到 [cvc5 Releases](https://github.com/cvc5/cvc5/releases) 下载对应版本的 `cvc5-*-x86_64-Linux-libcxx-static.tar.gz`，解压到 `external/cvc5/` 下（解压后目录名需为 `cvc5-Linux-x86_64-libcxx-static` 或类似）。然后安装 clang + libc++：`conda install -c conda-forge clangxx libcxx-devel`，再执行 `USE_CLANG_LIBCXX=1 ./scripts/build_all_parsers.sh`。  
+  **预编译包只需放在 `external/cvc5/` 一份**：cvc5_parser 和 smt-switch 都会用这一份（build_all_parsers.sh 会把 `CVC5_HOME` 指到该目录），无需在 smt-switch 目录里再放一份。
 
-### Haskell（可选）
+### Prolog / Haskell（可选，可不装）
 
-- 若需要 haskell-0.0.2 对比：用 [ghcup](https://www.haskell.org/ghcup/) 安装 GHC/Cabal，全部在 `~/.ghcup`，无需 root。再 `cabal install alex` 或 conda 装 alex，然后在 `external/haskell-0.0.2` 里构建。
-- 若不做 haskell 对比，可直接跳过，benchmark 里也可 `--exclude-parser` 掉（若列表里有）。
+- **prolog-smtlib**：不做该 parser 对比可完全跳过。若要做：`conda install -c conda-forge swi-prolog`，无需 root。
+- **haskell-0.0.2**：不做该 parser 对比可完全跳过。若要做：用 [ghcup](https://www.haskell.org/ghcup/) 安装 GHC/Cabal（`~/.ghcup`），再 `cabal install alex` 或 `conda install -c conda-forge alex`，然后 `./scripts/build_all_parsers.sh`。
+- 跑 benchmark 时可不包含二者：主程序或脚本里用 `--exclude-parser haskell-0.0.2 prolog-smtlib`（具体以 run_sampled_full.sh / run_parser_benchmark.py 支持的参数为准）。
 
 ### 下载与编译顺序建议
 
@@ -132,9 +134,11 @@ export PYTHON="$HOME/miniconda3/envs/smtbench/bin/python"
 
 ### 1. cvc5 失败
 
-**若报错：** `The source directory .../external/cvc5 does not appear to contain CMakeLists.txt`
+**若报错：** `The source directory .../external/cvc5 does not appear to contain CMakeLists.txt`  
+说明服务器上缺包装器文件。解决：从本机拷贝或 `git pull` 获取 `external/cvc5/CMakeLists.txt`、`cvc5_parser.cpp`、`run.sh`。
 
-说明服务器上的 `external/cvc5` 缺少本仓库的包装器文件（此前 CMakeLists.txt 被 .gitignore 排除）。解决：从本机把 `external/cvc5/CMakeLists.txt`、`external/cvc5/cvc5_parser.cpp`、`external/cvc5/run.sh` 拷到服务器同一路径；或在本机提交并推送 CMakeLists.txt 后在服务器 `git pull`，再执行下面的编译。
+**若报错：** `'cvc5/c/cvc5.h' file not found` 或 **\[SKIP] cvc5: 未找到预编译包**  
+说明 `external/cvc5/` 下还没有 cvc5 的预编译包（只有包装器源码）。解决：运行 `./scripts/download.sh --parsers-only` 自动下载并解压；或从 [cvc5 Releases](https://github.com/cvc5/cvc5/releases) 下载 **Linux libcxx-static** 的 tar.gz，解压到 `external/cvc5/`，使该目录下出现 `cvc5-Linux-x86_64-libcxx-static`（或类似）子目录，再执行下面的编译。
 
 **若为预编译包 libcxx 的链接/编译失败：** 预编译包 `cvc5-Linux-*-libcxx-static` 需要 **clang++** 和 **libc++**。用 Conda 装到当前环境时，需同时安装编译器与标准库（否则可能报 `cannot find -lc++`）：
 

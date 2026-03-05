@@ -49,6 +49,13 @@ build_cvc5() {
         SKIP+=("cvc5")
         return
     fi
+    PREBUILT_DIR=$(ls -d "$EXTERNAL_ROOT/cvc5"/cvc5-Linux-* "$EXTERNAL_ROOT/cvc5"/cvc5-*-static 2>/dev/null | head -1)
+    if [ -z "$PREBUILT_DIR" ] || [ ! -f "$PREBUILT_DIR/include/cvc5/cvc5.h" ]; then
+        echo "[SKIP] cvc5: 未找到预编译包（需 include/cvc5/cvc5.h）"
+        echo "       请运行: ./scripts/download.sh --parsers-only  或从 https://github.com/cvc5/cvc5/releases 下载 Linux libcxx-static 解压到 external/cvc5/"
+        SKIP+=("cvc5")
+        return
+    fi
     use_libcxx="${USE_CLANG_LIBCXX:-0}"
     if [ "$use_libcxx" != "1" ] && ls "$EXTERNAL_ROOT/cvc5"/cvc5-*libcxx* 1>/dev/null 2>&1 && command -v clang++ &>/dev/null; then
         use_libcxx=1
@@ -123,10 +130,10 @@ build_haskell() {
     run_build "haskell-0.0.2" "haskell-0.0.2" bash ./build.sh
 }
 
-# smt-switch: 需 CVC5_HOME 或自动检测：优先用 external/cvc5 下预编译包，否则用 external/smt-switch/src/cvc5（cvc5 源码）
+# smt-switch: 需 CVC5_HOME 或自动检测。与 cvc5_parser 共用同一份预编译包（放在 external/cvc5/ 即可，无需在 smt-switch 下再放一份）
 build_smt_switch() {
     if [ -z "${CVC5_HOME:-}" ]; then
-        # 优先：cvc5 预编译包（include + lib，无需先编译 cvc5）
+        # 优先：external/cvc5 下预编译包（与 cvc5_parser 共用）
         PREBUILT=$(ls -d "$EXTERNAL_ROOT/cvc5"/cvc5-* 2>/dev/null | head -1)
         if [ -n "$PREBUILT" ] && [ -f "$PREBUILT/lib/libcvc5.a" ] && [ -f "$PREBUILT/include/cvc5/cvc5.h" ]; then
             CVC5_HOME="$PREBUILT"
