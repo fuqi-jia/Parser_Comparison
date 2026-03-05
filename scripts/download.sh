@@ -118,8 +118,18 @@ do_parsers() {
             if ! ls -d "$EXTERNAL/cvc5"/cvc5-cvc5-* 2>/dev/null | head -1 | grep -q .; then
                 echo "-------- cvc5 源码（BUILD_CVC5_FROM_SOURCE=1）--------"
                 CVC5_SRC_ARC="$EXTERNAL/cvc5/cvc5-src.tar.gz"
+                if [ -f "$CVC5_SRC_ARC" ] && ! gzip -t "$CVC5_SRC_ARC" 2>/dev/null; then
+                    echo "[移除损坏] $CVC5_SRC_ARC，将重新下载"
+                    rm -f "$CVC5_SRC_ARC"
+                fi
                 if download_url "https://github.com/cvc5/cvc5/archive/refs/tags/${CVC5_TAG}.tar.gz" "$CVC5_SRC_ARC"; then
-                    extract_tar_gz "$CVC5_SRC_ARC" "$EXTERNAL/cvc5" && rm -f "$CVC5_SRC_ARC" && echo "[OK] cvc5 源码已解压，可执行: ./scripts/build_cvc5_from_source.sh"
+                    if gzip -t "$CVC5_SRC_ARC" 2>/dev/null && extract_tar_gz "$CVC5_SRC_ARC" "$EXTERNAL/cvc5"; then
+                        rm -f "$CVC5_SRC_ARC"
+                        echo "[OK] cvc5 源码已解压，可执行: ./scripts/build_cvc5_from_source.sh"
+                    else
+                        rm -f "$CVC5_SRC_ARC"
+                        echo "[失败] 解压 cvc5 源码失败，可删除 $CVC5_SRC_ARC 后重新运行"
+                    fi
                 fi
             else
                 echo "[已存在] cvc5 源码，可执行: ./scripts/build_cvc5_from_source.sh"
@@ -163,8 +173,9 @@ do_parsers() {
                 if ! ls -d "$EXTERNAL/cvc5"/cvc5-cvc5-* 2>/dev/null | head -1 | grep -q .; then
                     echo "-------- cvc5 源码（供从源码构建，如 glibc < 2.38）--------"
                     CVC5_SRC_ARC="$EXTERNAL/cvc5/cvc5-src.tar.gz"
+                    [ -f "$CVC5_SRC_ARC" ] && ! gzip -t "$CVC5_SRC_ARC" 2>/dev/null && rm -f "$CVC5_SRC_ARC"
                     if download_url "https://github.com/cvc5/cvc5/archive/refs/tags/${CVC5_TAG}.tar.gz" "$CVC5_SRC_ARC"; then
-                        extract_tar_gz "$CVC5_SRC_ARC" "$EXTERNAL/cvc5" && rm -f "$CVC5_SRC_ARC" && echo "[OK] cvc5 源码已解压，可执行: ./scripts/build_cvc5_from_source.sh"
+                        gzip -t "$CVC5_SRC_ARC" 2>/dev/null && extract_tar_gz "$CVC5_SRC_ARC" "$EXTERNAL/cvc5" && rm -f "$CVC5_SRC_ARC" && echo "[OK] cvc5 源码已解压，可执行: ./scripts/build_cvc5_from_source.sh"
                     fi
                 fi
             fi
