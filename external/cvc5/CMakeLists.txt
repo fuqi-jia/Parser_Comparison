@@ -4,10 +4,13 @@ project(cvc5_parser CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 
-# 本目录下：优先 cvc5-install（从源码 make install 得到，兼容旧 glibc），否则预编译包 cvc5-Linux-* / cvc5-*-static
+# 本目录下：优先 cvc5-install（从源码 make install 得到，兼容旧 glibc；可能是 .a 或 .so），否则预编译包 cvc5-Linux-* / cvc5-*-static
 set(CVC5_DIR "")
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cvc5-install/include/cvc5/cvc5.h" AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cvc5-install/lib/libcvc5.a")
-  set(CVC5_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cvc5-install")
+set(CVC5_INSTALL_LIB "${CMAKE_CURRENT_SOURCE_DIR}/cvc5-install/lib")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cvc5-install/include/cvc5/cvc5.h")
+  if(EXISTS "${CVC5_INSTALL_LIB}/libcvc5.a" OR EXISTS "${CVC5_INSTALL_LIB}/libcvc5.so" OR EXISTS "${CVC5_INSTALL_LIB}/libcvc5.so.1")
+    set(CVC5_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cvc5-install")
+  endif()
 endif()
 if(NOT CVC5_DIR)
   file(GLOB CVC5_PREBUILT "cvc5-Linux-*" "cvc5-*-static")
