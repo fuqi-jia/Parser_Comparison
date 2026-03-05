@@ -157,7 +157,12 @@ USE_CLANG_LIBCXX=1 ./scripts/build_all_parsers.sh
 若已装 clangxx 仍报 **`cannot find -lc++`** 或 **`x86_64-conda-linux-gnu-ld: cannot find -lc++`**，补装 libc++ 即可：`conda install -c conda-forge libcxx-devel -y`，再重新执行上面的编译命令。
 
 **若报错：** **`undefined reference to '__isoc23_strtol'`** 或 **`__isoc23_fscanf'`**  
-说明预编译包是用 glibc 2.38+ 构建的，而 Conda 环境里的链接器用的是较旧的 glibc。可先 `git pull` 再试（CMake 已尝试显式链接系统 libc）。若仍失败，改用**系统 clang** 编译/链接（会使用系统 glibc）：安装系统 clang 与 libc++（若有 root：`apt install clang libc++-dev`），然后执行：
+说明预编译包是用 glibc 2.38+ 构建的，而 Conda 的链接器用的是较旧的 glibc。解决：`git pull` 后重新编译（脚本会强制用**系统 ld** `/usr/bin/ld` 链接，以使用系统 glibc；需服务器上有 `/usr/bin/ld`）。**必须先清空 build 再配置**：
+```bash
+cd external/cvc5 && rm -rf build && cd ../..
+USE_CLANG_LIBCXX=1 ./scripts/build_all_parsers.sh
+```
+若仍失败，改用**系统 clang** 编译/链接：安装系统 clang 与 libc++（若有 root：`apt install clang libc++-dev`），然后执行：
 
 ```bash
 cd /path/to/Parser_Comparison/external/cvc5
@@ -171,24 +176,44 @@ make -j$(nproc)
 
 ### 2. haskell-0.0.2 跳过（未找到 cabal）
 
-需要 GHC + Cabal，且**不需要 root**：用 [ghcup](https://www.haskell.org/ghcup/) 装到 `~/.ghcup`：
+需要 GHC + Cabal + alex，**全部可装到用户目录，无需 root**。按下面顺序执行即可。
+
+**步骤 1：安装 GHC 和 Cabal（ghcup，装到 ~/.ghcup）**
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
-# 按提示选默认即可；安装完成后按提示 source 环境（如 source ~/.ghcup/env）
 ```
 
-然后安装 alex（二选一）：
+- 安装过程会问是否加入 PATH，选 **Yes**；是否安装 haskell-language-server 等可选工具可选 **No**。
+- 安装结束后按提示执行（或新开终端后执行）：
+  ```bash
+  source ~/.ghcup/env
+  ```
+  也可把 `source ~/.ghcup/env` 写入 `~/.bashrc`，以后登录自动生效。
 
-- **用 Cabal**：`cabal install alex`
-- **用 Conda**（更省事）：`conda activate smtbench && conda install -c conda-forge alex -y`
+**步骤 2：安装 alex（二选一）**
 
-最后重新编译：
+- **用 Conda（推荐，无需额外配置）**：
+  ```bash
+  conda activate smtbench
+  conda install -c conda-forge alex -y
+  ```
+- **用 Cabal**：
+  ```bash
+  source ~/.ghcup/env
+  cabal install alex --installdir=$HOME/.local/bin
+  export PATH="$HOME/.local/bin:$PATH"
+  ```
+
+**步骤 3：重新编译**
 
 ```bash
-source ~/.ghcup/env   # 若当前 shell 还没加载 ghcup
+source ~/.ghcup/env   # 当前 shell 若还没加载过 ghcup
+cd /path/to/Parser_Comparison
 ./scripts/build_all_parsers.sh
 ```
+
+若仍提示未找到 cabal，确认同一 shell 里已执行 `source ~/.ghcup/env`，且 `which cabal` 指向 `~/.ghcup` 下的路径。
 
 ### 3. smt-switch 跳过（检测到 cvc5 源码但尚未构建）
 

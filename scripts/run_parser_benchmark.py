@@ -6,6 +6,7 @@ Parser benchmark：对 .smt2 列表跑所有 parser，10s 超时、可选内存�
   python3 scripts/run_parser_benchmark.py --benchmark-dir benchmark/non-incremental/_test_one
   python3 scripts/run_parser_benchmark.py --file-list results/file_list.txt --benchmark-dir benchmark/non-incremental
   --file-list: 一行一个 .smt2 路径，不扫描目录（适合几十 G 的 benchmark）
+  --jobs / -j: 并行任务数（默认 200，适合 256 核服务器）
   --log-dir results/logs: 按理论分 log（仅若干 QF_*.log）。Java 崩溃转储统一写到 results/java_errors/
   PYTHONUNBUFFERED=1 nohup ... > results/benchmark_main.log 2>&1 &
 """
@@ -20,6 +21,7 @@ import subprocess
 import resource
 from pathlib import Path
 from datetime import datetime
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BENCHMARK_DIR = REPO_ROOT / "benchmark" / "non-incremental"
@@ -256,6 +258,8 @@ def main():
     ap.add_argument("--table", type=Path, default=TABLE_CSV)
     ap.add_argument("--table-wide", type=Path, default=TABLE_WIDE_CSV)
     ap.add_argument("--log-dir", type=Path, default=None)
+    ap.add_argument("--jobs", "-j", type=int, default=200,
+                    help="并行任务数（默认 200，适合 256 核服务器）")
     ap.add_argument("--exclude-parser", type=str, action="append", default=None, metavar="NAME",
                     help="排除指定 parser，不参与 benchmark（可多次指定，如 --exclude-parser native）")
     args = ap.parse_args()
@@ -326,29 +330,42 @@ def main():
     args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
     if args.log_dir:
         args.log_dir.mkdir(parents=True, exist_ok=True)
-    print("开始运行 {} 个任务（每完成一条会写 checkpoint 和 log）...".format(len(todo)), flush=True)
+    jobs = max(1, min(args.jobs, len(todo)))
+    print("开始运行 {} 个任务，并行度 {}（每完成一条会写 checkpoint 和 log）...".format(len(todo), jobs), flush=True)
     sys.stdout.flush()
     sys.stderr.flush()
-    for i, (file_path, parser_name) in enumerate(todo):
-        status, time_ms, memory_kb, ast_nodes = run_one(binary, file_path, parser_name, args.timeout, args.memory_mb)
-        append_checkpoint(args.checkpoint, file_path, parser_name, status, time_ms, memory_kb, ast_nodes)
-        line = "[{}/{}] {} | {} -> {}  {} ms  {} KB  nodes={}".format(
-            i + 1, len(todo), parser_name, Path(file_path).name[:40], status, time_ms, memory_kb, ast_nodes
-        )
-        print(line, flush=True)
-        if args.log_dir:
-            theory = get_theory_from_path(file_path, benchmark_dir)
-            log_file = args.log_dir / "{}.log".format(theory)
+
+    completed = 0
+    with ProcessPoolExecutor(max_workers=jobs) as executor:
+        future_to_task = {
+            executor.submit(run_one, binary, file_path, parser_name, args.timeout, args.memory_mb): (file_path, parser_name)
+            for (file_path, parser_name) in todo
+        }
+        for future in as_completed(future_to_task):
+            file_path, parser_name = future_to_task[future]
             try:
-                with open(log_file, "a", encoding="utf-8") as lf:
-                    lf.write(line + "\n")
-                    lf.flush()
-                    try:
-                        os.fsync(lf.fileno())
-                    except Exception:
-                        pass
+                status, time_ms, memory_kb, ast_nodes = future.result()
             except Exception as e:
-                print("警告: 无法写入 {}: {}".format(log_file, e), file=sys.stderr, flush=True)
+                status, time_ms, memory_kb, ast_nodes = "error", "", "", str(e)[:200]
+            append_checkpoint(args.checkpoint, file_path, parser_name, status, time_ms, memory_kb, ast_nodes)
+            completed += 1
+            line = "[{}/{}] {} | {} -> {}  {} ms  {} KB  nodes={}".format(
+                completed, len(todo), parser_name, Path(file_path).name[:40], status, time_ms, memory_kb, ast_nodes
+            )
+            print(line, flush=True)
+            if args.log_dir:
+                theory = get_theory_from_path(file_path, benchmark_dir)
+                log_file = args.log_dir / "{}.log".format(theory)
+                try:
+                    with open(log_file, "a", encoding="utf-8") as lf:
+                        lf.write(line + "\n")
+                        lf.flush()
+                        try:
+                            os.fsync(lf.fileno())
+                        except Exception:
+                            pass
+                except Exception as e:
+                    print("警告: 无法写入 {}: {}".format(log_file, e), file=sys.stderr, flush=True)
 
     _, all_rows = load_checkpoint(args.checkpoint)
     long_rows, wide_rows = build_table_from_checkpoint(all_rows)
