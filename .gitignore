@@ -147,9 +147,13 @@ external/smt-switch/VERSION
 external/smt-switch/.clang-format
 external/smt-switch/.clangd
 external/smt-switch/issues.md
-# smt-switch 发布包（如 smt-switch-1.0.6 解压/安装目录）
+# smt-switch 发布包（如 smt-switch-1.0.6 解压/安装目录）；保留 CMakeLists.txt 以便提交 location.hh 等补丁
 smt-switch-*/
 external/smt-switch/smt-switch-*/
+# 例外：允许提交 smt-switch-1.0.6 的 CMakeLists.txt（Bison location.hh 等修复）
+!external/smt-switch/smt-switch-1.0.6/
+external/smt-switch/smt-switch-1.0.6/*
+!external/smt-switch/smt-switch-1.0.6/CMakeLists.txt
 
 # results
 !results/logs/*.log
