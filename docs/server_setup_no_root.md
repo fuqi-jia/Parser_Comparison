@@ -194,11 +194,22 @@ ghcup install ghc 8.10.7
 
 **步骤 2：用 GHC 8.10.7 安装 alex（必须用 8.10 环境，否则生成的代码与 9.x 不兼容）**
 
-```bash
-source ~/.ghcup/env
-ghcup run ghc-8.10.7 -- cabal install alex --installdir=$HOME/.local/bin
-export PATH="$HOME/.local/bin:$PATH"
-```
+任选其一：
+
+- **方式 A（先切 GHC 再装，推荐）**：
+  ```bash
+  source ~/.ghcup/env
+  ghcup set ghc 8.10.7
+  cabal install alex --installdir=$HOME/.local/bin
+  ghcup set ghc 9.6.7   # 可选：改回默认 GHC
+  export PATH="$HOME/.local/bin:$PATH"
+  ```
+- **方式 B**（若 `ghcup run` 下找不到 `bash`，可用绝对路径）：
+  ```bash
+  source ~/.ghcup/env
+  ghcup run ghc-8.10.7 -- /usr/bin/bash -c 'cabal install alex --installdir=$HOME/.local/bin'
+  export PATH="$HOME/.local/bin:$PATH"
+  ```
 
 **步骤 3：重新编译**
 
