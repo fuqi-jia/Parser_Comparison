@@ -30,12 +30,16 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_INPUT = REPO_ROOT / "results" / "parser_benchmark_table_sampled.csv"
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "results" / "summary"
 
-# 从 file 路径提取理论：.../sampled/files/QF_AX/... -> QF_AX
-THEORY_PATTERN = re.compile(r"sampled/files/([^/]+)/")
+# 从 file 路径提取理论：
+# - sampled: .../sampled/files/QF_AX/... -> QF_AX
+# - 全集: .../benchmark/non-incremental/QF_AX/... 或 .../incremental/QF_AX/... -> QF_AX
+THEORY_PATTERN_SAMPLED = re.compile(r"sampled/files/([^/]+)/")
+THEORY_PATTERN_FULL = re.compile(r"(?:non-incremental|incremental)/([^/]+)/")
 
 
 def extract_theory(file_path):
-    m = THEORY_PATTERN.search(file_path)
+    path_str = (file_path or "").replace("\\", "/")
+    m = THEORY_PATTERN_SAMPLED.search(path_str) or THEORY_PATTERN_FULL.search(path_str)
     return m.group(1) if m else "unknown"
 
 

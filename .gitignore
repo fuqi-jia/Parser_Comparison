@@ -174,3 +174,7 @@ test/*
 benchmark/*
 
 *.pyc
+*.smt2
+results/*
+!results/summary/*
+!results/frontend_scatter/*

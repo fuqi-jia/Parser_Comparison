@@ -49,7 +49,8 @@ if (CVC5_PREBUILT)
     find_library(GMPXX_LIB_REQUIRED REQUIRED NAMES gmpxx)
     target_link_directories(smt-switch-cvc5 PRIVATE "${CVC5_LIB_DIR}")
     target_link_libraries(smt-switch-cvc5 ${CVC5_LIB} ${CVC5PARSER_LIB} ${POLYLIBXX} ${POLYLIB} ${GMPXX_LIB_REQUIRED} ${GMP_LIB_REQUIRED})
-    set_target_properties(smt-switch-cvc5 PROPERTIES INSTALL_RPATH "${CVC5_LIB_DIR}" BUILD_WITH_INSTALL_RPATH TRUE)
+    # $ORIGIN/.. 使加载时在父目录找到 libsmt-switch.so（cvc5/ 与 libsmt-switch.so 同级的上一级）
+    set_target_properties(smt-switch-cvc5 PROPERTIES INSTALL_RPATH "${CVC5_LIB_DIR};\$ORIGIN/.." BUILD_WITH_INSTALL_RPATH TRUE)
   else()
     find_library(POLYLIB REQUIRED NAMES picpoly PATHS "${CVC5_LIB_DIR}" NO_DEFAULT_PATH)
     find_library(POLYLIBXX REQUIRED NAMES picpolyxx PATHS "${CVC5_LIB_DIR}" NO_DEFAULT_PATH)
@@ -78,6 +79,14 @@ endif()
 target_link_libraries(smt-switch-cvc5 smt-switch)
 if (NOT CVC5_PREBUILT)
   target_link_libraries(smt-switch-cvc5 ${GMP_LIBRARIES})
+endif()
+
+# 使 libsmt-switch-cvc5.so 在运行时能找到上一级的 libsmt-switch.so，无需 LD_LIBRARY_PATH
+if(NOT CVC5_SHARED_INSTALL)
+  set_target_properties(smt-switch-cvc5 PROPERTIES
+    BUILD_RPATH "\$ORIGIN/.."
+    INSTALL_RPATH "\$ORIGIN/.."
+    BUILD_WITH_INSTALL_RPATH FALSE)
 endif()
 
 if (SMT_SWITCH_LIB_TYPE STREQUAL STATIC AND NOT CVC5_PREBUILT)
