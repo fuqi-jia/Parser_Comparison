@@ -158,6 +158,15 @@ external/smt-switch/smt-switch-1.0.6/*
 external/smt-switch/smt-switch-1.0.6/cvc5/*
 !external/smt-switch/smt-switch-1.0.6/cvc5/CMakeLists.txt
 
+external/prolog-smtlib/
+!external/prolog-smtlib/run.sh
+
+external/haskell-0.0.2/*
+external/haskell-0.0.2/dist-newstyle/*
+!external/haskell-0.0.2/run.sh
+!external/haskell-0.0.2/build.sh
+
+
 # results
 !results/logs/*.log
 !results/logs_sampled/*.log
