@@ -131,9 +131,12 @@ def plot_one(ax, data, metric_key, other_parser, xlabel, ylabel, scale_rss=False
     # log scale：下限必须为正；time/RSS 通常没有很小值，用 max 的 1% 做下限，不从 10^0 起留空
     if lim_min <= 0:
         lim_min = max(1e-9, lim_max * 0.01) if lim_max > 0 else 1e-9
-    # 超时点往里缩一截（log 下用比例），避免被边框盖住；用叉号更醒目
-    boundary = lim_max / 1.15
-    boundary = max(boundary, lim_min * 1.1)
+    # 超时叉号画在数据最外侧（boundary = lim_max），保证叉号是最外层的点
+    boundary = lim_max
+    # 坐标轴再往外扩一截（log 下用比例），让叉号与边框之间留出缝隙，不贴边
+    pad_factor = 1.12  # 约 12% 扩展，留出可见空隙
+    lim_min_plot = lim_min / pad_factor
+    lim_max_plot = lim_max * pad_factor
     # 成功点
     if ok_pairs:
         xs, ys = zip(*ok_pairs)
@@ -155,9 +158,9 @@ def plot_one(ax, data, metric_key, other_parser, xlabel, ylabel, scale_rss=False
         ax.scatter(tx, ty, marker="x", s=36, linewidths=1.2, c="k", zorder=5)
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.plot([lim_min, lim_max], [lim_min, lim_max], "k--", alpha=0.6, linewidth=1)
-    ax.set_xlim(lim_min, lim_max)
-    ax.set_ylim(lim_min, lim_max)
+    ax.plot([lim_min_plot, lim_max_plot], [lim_min_plot, lim_max_plot], "k--", alpha=0.6, linewidth=1)
+    ax.set_xlim(lim_min_plot, lim_max_plot)
+    ax.set_ylim(lim_min_plot, lim_max_plot)
     ax.set_xlabel("")
     ax.set_ylabel("")
     ax.tick_params(axis="both", labelsize=8)
