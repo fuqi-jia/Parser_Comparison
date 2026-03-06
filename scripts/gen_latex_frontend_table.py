@@ -2,9 +2,8 @@
 # -*- coding: utf-8 -*-
 """
 从 results/summary/parser_summary_sampled_<Theory>.md 读取数据，生成 LaTeX 表。
-仅含四类指标：1) Median Parsing Time (success-only)  2) Success Rate (= 100 − timeout − failure)
-3) Peak RSS (success-only)  4) Structural Size (nodes)。
-时间/内存/节点取最小为最佳（加粗），成功率取最大为最佳；仅成功率≥95% 的 parser 参与 time/RSS/nodes 的「最佳/次佳」加粗（与正文 "Among front-ends with ≥95% success rate" 一致）。内存输出为 MB（由 kB 除以 1024）。
+仅含三类指标：1) Success Rate (= 100 − timeout − failure)  2) Timeout Rate (%)  3) Fail Rate (%)。
+成功率取最大为最佳；超时率、失败率取最小为最佳。
 """
 
 from pathlib import Path
@@ -14,8 +13,6 @@ DEFAULT_SUMMARY_DIR = REPO_ROOT / "results" / "summary"
 
 # 表列顺序：Z3, cvc5, smt-sw, pysmt, ANT4, jSMT, SMTParser
 PARSER_ORDER = ["z3", "cvc5", "smt-switch", "pysmt", "antlr4", "jsmtlib", "native"]
-# Peak RSS (MB) 中 jsmtlib 不参与比较，全部显示 \sim
-PARSER_RSS_HIDE = {"jsmtlib"}
 PARSER_DISPLAY = {
     "z3": "Z3",
     "cvc5": "cvc5",
@@ -31,8 +28,6 @@ THEORIES = ["QF_AX", "QF_BV", "QF_FP", "QF_LIA", "QF_LRA", "QF_NIA", "QF_NRA", "
 # 已知不支持的 (parser, theory)：Timeout/Failure 率不展示 100%，直接显示 -
 UNSUPPORTED_PARSER_THEORY = {("pysmt", "QF_FP"), ("smt-switch", "QF_AX"), ("smt-switch", "QF_FP")}
 
-# 仅当成功率 ≥ 此阈值时才参与「最佳/次佳」加粗（time/RSS/nodes）；与正文 "Among front-ends with ≥95% success rate" 一致
-SUCCESS_RATE_THRESHOLD = 95.0
 
 
 def parse_float(s):
@@ -136,58 +131,25 @@ def emit_table(all_data, out_path):
             m = row_data.get(p, {})
             v = m.get(metric_key)
             values.append(v)
-        # 成功率 ≥ SUCCESS_RATE_THRESHOLD 才参与 best/second（time/RSS/nodes）；Success Rate 行本身不按此过滤
-        def eligible_for_best(i, p):
-            if metric_key == "success_pct":
-                return True
-            if p == "native":
-                return True
-            if (p, theory) in UNSUPPORTED_PARSER_THEORY:
-                return False
-            s = row_data.get(p, {}).get("success_pct")
-            return s is not None and s >= SUCCESS_RATE_THRESHOLD
-        # Peak RSS: 隐藏列不参与 best/second，其值视为 None 再算
-        if metric_key == "memory_kb" and PARSER_RSS_HIDE:
-            values_for_best = [None if (p in PARSER_RSS_HIDE or not eligible_for_best(i, p)) else values[i] for i, p in enumerate(PARSER_ORDER)]
-            best = best_indices(values_for_best, lower_better=lower_better)
-            second = second_best_indices(values_for_best, lower_better=lower_better)
-        elif metric_key == "success_pct" and UNSUPPORTED_PARSER_THEORY:
+        # 不支持的 (parser, theory) 不参与 best/second，显示 -
+        if metric_key == "success_pct" or (metric_key in ("timeout_pct", "fail_pct") and UNSUPPORTED_PARSER_THEORY):
             values_for_best = [None if (p, theory) in UNSUPPORTED_PARSER_THEORY else values[i] for i, p in enumerate(PARSER_ORDER)]
-            best = best_indices(values_for_best, lower_better=lower_better)
-            second = second_best_indices(values_for_best, lower_better=lower_better)
         else:
-            values_for_best = [values[i] if eligible_for_best(i, p) else None for i, p in enumerate(PARSER_ORDER)]
-            best = best_indices(values_for_best, lower_better=lower_better)
-            second = second_best_indices(values_for_best, lower_better=lower_better)
+            values_for_best = list(values)
+        best = best_indices(values_for_best, lower_better=lower_better)
+        second = second_best_indices(values_for_best, lower_better=lower_better)
         cells = []
         for i, p in enumerate(PARSER_ORDER):
-            if metric_key == "memory_kb" and p in PARSER_RSS_HIDE:
-                cells.append(r"$\sim$")
-                continue
-            if metric_key == "success_pct" and (p, theory) in UNSUPPORTED_PARSER_THEORY:
+            if (p, theory) in UNSUPPORTED_PARSER_THEORY:
                 cells.append("-")
                 continue
             v = values[i]
-            if metric_key == "memory_kb" and v is not None:
-                display_val = round(v / 1024.0, 2)
-            elif v is not None and isinstance(v, float) and v == int(v):
+            if v is not None and isinstance(v, float) and v == int(v):
                 display_val = int(v)
             else:
                 display_val = v
             cells.append(format_cell(display_val, i in best, i in second))
         return " & ".join(cells)
-
-    time_block = []
-    time_block.append(r"\multicolumn{8}{c}{\textbf{Median Parsing Time (ms, success-only)}} \\")
-    time_block.append(r"\midrule")
-    for th in THEORIES:
-        if th not in all_data:
-            continue
-        cells = row_cells("time_ms", True, th)
-        th_disp = th.replace("_", "\\_")
-        time_block.append(f"{th_disp}  & {cells} \\\\")
-    time_block.append(r"\midrule")
-    time_block.append("")
 
     success_block = []
     success_block.append(r"\multicolumn{8}{c}{\textbf{Success Rate (\%)} ($= 100 - \mathrm{timeout} - \mathrm{failure}$)} \\")
@@ -201,35 +163,34 @@ def emit_table(all_data, out_path):
     success_block.append(r"\midrule")
     success_block.append("")
 
-    rss_block = []
-    rss_block.append(r"\multicolumn{8}{c}{\textbf{Peak RSS (MB, success-only)}} \\")
-    rss_block.append(r"\midrule")
+    timeout_block = []
+    timeout_block.append(r"\multicolumn{8}{c}{\textbf{Timeout Rate (\%)}} \\")
+    timeout_block.append(r"\midrule")
     for th in THEORIES:
         if th not in all_data:
             continue
-        cells = row_cells("memory_kb", True, th)
+        cells = row_cells("timeout_pct", True, th)  # lower better
         th_disp = th.replace("_", "\\_")
-        rss_block.append(f"{th_disp}  & {cells} \\\\")
-    rss_block.append(r"\midrule")
-    rss_block.append("")
+        timeout_block.append(f"{th_disp}  & {cells} \\\\")
+    timeout_block.append(r"\midrule")
+    timeout_block.append("")
 
-    nodes_block = []
-    nodes_block.append(r"\multicolumn{8}{c}{\textbf{Structural Size (nodes)}} \\")
-    nodes_block.append(r"\midrule")
+    fail_block = []
+    fail_block.append(r"\multicolumn{8}{c}{\textbf{Fail Rate (\%)}} \\")
+    fail_block.append(r"\midrule")
     for th in THEORIES:
         if th not in all_data:
             continue
-        cells = row_cells("nodes", True, th)  # lower better
+        cells = row_cells("fail_pct", True, th)  # lower better
         th_disp = th.replace("_", "\\_")
-        nodes_block.append(f"{th_disp}  & {cells} \\\\")
-    nodes_block.append(r"\bottomrule")
+        fail_block.append(f"{th_disp}  & {cells} \\\\")
+    fail_block.append(r"\bottomrule")
 
-    # 四类指标顺序：Success Rate（第一栏）, Median Parsing Time, Peak RSS, Structural Size
     lines = [
         r"\begin{table*}[hp]",
         r"\centering",
         r"\caption{Front-end performance comparison (solving disabled).",
-        r"Success rate (\%, $= 100 - \mathrm{timeout} - \mathrm{failure}$); Median parsing time (ms, success-only); Peak RSS (MB, success-only); Structural size (nodes).}",
+        r"Success rate (\%, $= 100 - \mathrm{timeout} - \mathrm{failure}$); Timeout rate (\%); Fail rate (\%).}",
         r"\label{tab:frontend-all}",
         r"\resizebox{\textwidth}{!}{%",
         r"\begin{tabular}{lccccccc}",
@@ -241,9 +202,8 @@ def emit_table(all_data, out_path):
         "",
     ]
     lines.extend(success_block)
-    lines.extend(time_block)
-    lines.extend(rss_block)
-    lines.extend(nodes_block)
+    lines.extend(timeout_block)
+    lines.extend(fail_block)
     lines.append(r"\end{tabular}%")
     lines.append(r"}")
     lines.append(r"\end{table*}")
