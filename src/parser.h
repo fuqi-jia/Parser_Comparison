@@ -1,18 +1,14 @@
 #pragma once
 
-#include "../SMTParser/include/parser.h"
+#include "somtparser/parser.h"  // SOMTParser/include/somtparser/parser.h
 
 namespace SMTParser {
-    // 创建Parser实例的工厂函数
-    inline ParserPtr createParser() {
-        return newParser();
+    // 兼容旧名：封装 SOMTParser 库
+    inline SOMTParser::ParserPtr createParser() {
+        return SOMTParser::newParser();
     }
-
-    // 从文件创建Parser实例的工厂函数
-    inline ParserPtr createParserFromFile(const std::string& filename) {
-        return newParser(filename);
+    inline SOMTParser::ParserPtr createParserFromFile(const std::string& filename) {
+        return SOMTParser::newParser(filename);
     }
-
-    // 获取Parser中的错误向量类型
     using ErrorVec = std::vector<std::string>;
 } 

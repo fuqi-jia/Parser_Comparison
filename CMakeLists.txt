@@ -21,8 +21,8 @@ if(DEFINED ENV{CONDA_PREFIX} AND NOT "$ENV{CONDA_PREFIX}" STREQUAL "")
   message(STATUS "PKG_CONFIG_PATH 已加入 CONDA_PREFIX，SMTParser 将使用 conda 的 gmp/mpfr")
 endif()
 
-# add SMTParser subdirectory
-add_subdirectory(SMTParser)
+# add SOMTParser subdirectory
+add_subdirectory(SOMTParser)
 
 # find GMP library
 find_package(PkgConfig REQUIRED)
@@ -41,7 +41,7 @@ add_executable(smt_parser_comparison src/main.cpp)
 
 # include directories
 target_include_directories(smt_parser_comparison PRIVATE 
-    ${CMAKE_SOURCE_DIR}/SMTParser/include
+    ${CMAKE_SOURCE_DIR}/SOMTParser/include
     ${CMAKE_SOURCE_DIR}/src
     ${GMP_INCLUDE_DIRS}
     ${GMPXX_INCLUDE_DIRS}
@@ -50,7 +50,7 @@ target_include_directories(smt_parser_comparison PRIVATE
 # link libraries
 target_link_libraries(smt_parser_comparison PRIVATE 
     smt_parser_lib  # from src directory
-    smtparser_static  # SMTParser library
+    somtparser_static  # SOMTParser library
     ${GMP_LIBRARIES}
     ${GMPXX_LIBRARIES}
 )

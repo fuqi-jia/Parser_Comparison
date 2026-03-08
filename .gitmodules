@@ -1,4 +1,4 @@
-[submodule "SMTParser"]
-    path = SMTParser
-    url = https://github.com/fuqi-jia/SMTParser.git
-	branch = manager
+[submodule "SOMTParser"]
+	path = SOMTParser
+	url = https://github.com/fuqi-jia/SOMTParser.git
+	branch = main

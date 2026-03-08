@@ -11,8 +11,8 @@ set(HEADERS
     smt_parser_comparison.h
 )
 
-# 包含SMTParser头文件目录
-include_directories(${CMAKE_SOURCE_DIR}/SMTParser/include)
+# 包含 SOMTParser 头文件目录
+include_directories(${CMAKE_SOURCE_DIR}/SOMTParser/include)
 
 # 添加库文件
 add_library(smt_parser_lib STATIC
@@ -24,7 +24,7 @@ add_library(smt_parser_lib STATIC
 )
 
 # 链接SMTParser库
-target_link_libraries(smt_parser_lib PUBLIC smtparser_static)
+target_link_libraries(smt_parser_lib PUBLIC somtparser_static)
 
 # 如果在Linux系统上，需要链接额外的库
 if(UNIX AND NOT APPLE)
@@ -40,7 +40,7 @@ target_link_libraries(smt_parser_lib PUBLIC Threads::Threads)
 
 # 添加parser_wrapper可执行程序
 add_executable(smt_parser_wrapper parser_wrapper.cpp)
-target_link_libraries(smt_parser_wrapper PUBLIC smtparser_static)
+target_link_libraries(smt_parser_wrapper PUBLIC somtparser_static)
 
 # 如果在Linux系统上，需要链接额外的库
 if(UNIX AND NOT APPLE)
