@@ -1,3 +1,6 @@
+# 误克隆/拼写错误的子模块目录（正确子模块名为 SOMTParser）
+SMTParser/
+
 # Prerequisites
 *.d
 
@@ -56,6 +59,7 @@ install_manifest.txt
 # *.tar.lrz
 
 # log
+logs/
 *.log
 hs_err_pid*.log
 core.*
@@ -81,7 +85,9 @@ external/**/.gradle/
 external/**/__pycache__/
 external/**/*.pyc
 external/**/*.exe
+external/z3/Makefile
 external/z3/z3_parser
+external/z3/z3_parse_vs_solve
 external/cvc5/cvc5_parser
 external/cvc5/build/
 external/smt-switch/build/
@@ -117,10 +123,14 @@ external/cvc5/cvc5-*-static/
 external/cvc5/cvc5-install/
 external/cvc5/cvc5-cvc5-*/
 external/cvc5/*.zip
+external/cvc5/*.tar.gz
 
 # antlr / jsmtlib：下载的 JAR、grammar zip、jSMTLIB SDK 目录
 external/antlr4_parser/*.jar
 external/antlr4_parser/*.zip
+external/antlr4_parser/master.zip*
+external/antlr4_parser/antlr4-*/
+external/antlr4_parser/smtlibv2-grammar/
 external/jsmtlib/jSMTLIB-*/
 external/jsmtlib/*.zip
 
@@ -209,5 +219,13 @@ results/*
 !results/parse_vs_solve/*.md
 !results/native_z3_dual_path/
 !results/native_z3_dual_path/*.md
+
+# 实验断点 / 长表 CSV（可再生，不提交）
+results/roundtrip/roundtrip_checkpoint.csv
+results/roundtrip/roundtrip_table.csv
+results/parse_vs_solve/z3_parse_solve_checkpoint.csv
+results/parse_vs_solve/z3_parse_solve_table.csv
+results/native_z3_dual_path/native_z3_dual_path_checkpoint.csv
+results/native_z3_dual_path/native_z3_dual_path_table.csv
 
 .memory
