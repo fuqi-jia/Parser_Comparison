@@ -5,7 +5,8 @@
 From the repository root, run the full pipeline **sampling (optional) → benchmark → recheck → summary → LaTeX**:
 
 ```bash
-./scripts/run_sampled_full.sh
+./parser_comparison.sh sampled
+# equivalent: ./scripts/run_sampled_full.sh
 ```
 
 - **Default:** resume from checkpoints. Existing checkpoint/recheck work is skipped; only unfinished jobs run.
@@ -17,13 +18,13 @@ Examples:
 
 ```bash
 # First run or resume
-./scripts/run_sampled_full.sh
+./parser_comparison.sh sampled
 
 # Wipe artifacts and rerun from scratch
-./scripts/run_sampled_full.sh --fresh
+./parser_comparison.sh sampled --fresh
 
 # Sampling exists; only benchmark + downstream
-./scripts/run_sampled_full.sh --skip-sample
+./parser_comparison.sh sampled --skip-sample
 ```
 
 ## Pipeline steps

@@ -1,22 +1,71 @@
 # Parser_Comparison
 
-Artifact for comparing multiple **SMT-LIB front ends** under a **parse-only** configuration on the SMT-COMP 2025 non-incremental families (QF_AX, QF_BV, QF_FP, QF_LIA, QF_LRA, QF_NIA, QF_NRA, QF_S). Solving is disabled; we report coverage and front-end cost (time, peak RSS, AST node count). **SMTParser** appears as parser name **`native`** in benchmark tables.
+Parse-only comparison of SMT-LIB front ends on SMT-COMP 2025 non-incremental benchmarks. **SMTParser** is recorded as parser name **`native`**.
 
-For a longer numeric discussion, see [results/summary/experimental_evaluation_data_summary.md](results/summary/experimental_evaluation_data_summary.md).
+---
 
-## Experimental setup (paper-aligned, short)
+## 1. Using `./parser_comparison.sh`
 
-- OS: Ubuntu 22.04-class environment; C/C++ **`-O3`**; single-threaded runs; **30 s** timeout; **4 GiB** address-space cap per process (tunable in scripts).
-- Front ends: Z3, cvc5, smt-switch, pySMT, ANTLR4, jSMTLIB, SMTParser (native).
-- Long result table: `results/parser_benchmark_table.csv`; per-theory summaries and LaTeX: `scripts/gen_all_tables_and_plots.sh`.
+`./parser_comparison.sh` is the **only command surface** you need for workflows in this repo. It resolves the repository root from the script path, `cd`s there, and forwards all remaining arguments to the wrapped tool.
 
-## Main results: coverage (paper Table `tab:frontend-all`)
+```bash
+chmod +x ./parser_comparison.sh    # once, if your clone is not executable
+./parser_comparison.sh help          # list commands and examples
+```
 
-The blocks below are generated from [`results/summary/frontend_table.tex`](results/summary/frontend_table.tex). A standalone copy lives in [results/summary/readme_paper_tables.md](results/summary/readme_paper_tables.md).
+### Command reference
 
-**Regenerate tables:** `python3 scripts/gen_readme_tables.py` writes `readme_paper_tables.md`. To splice them into this README:
+| Command | Calls | Purpose |
+|--------|--------|---------|
+| `benchmark` / `bench` | `scripts/run_parser_benchmark.py` | Multi-parser parse-only run over a file list |
+| `plots` | `scripts/gen_all_tables_and_plots.sh` | Per-theory summaries, `results/summary/frontend_table.tex`, scatter PNGs under `results/frontend_scatter/` |
+| `readme` | `scripts/gen_readme_tables.py` | Markdown tables from `frontend_table.tex`; add `--readme README.md` to splice **section 2** of this file |
+| `roundtrip` | `scripts/run_roundtrip_benchmark.py` | Native parse → `dumpSMT2` → reparse; outputs under `results/roundtrip/` |
+| `robustness` | `scripts/summarize_robustness.py` | Native `ok`/`timeout`/`fail` by theory; merges `roundtrip_table.csv` if present |
+| `parse-vs-solve` | `scripts/run_parse_vs_solve_benchmark.py` | Z3 parse vs `check_sat` wall clock; outputs under `results/parse_vs_solve/` |
+| `sampled` | `scripts/run_sampled_full.sh` | Sampled pipeline (`--fresh`, `--skip-sample`, …) |
+| `build-parsers` | `scripts/build_all_parsers.sh` | Build drivers under `external/*` (Z3, cvc5, …) |
+| `download` | `scripts/download.sh` | Benchmarks / parser binaries |
+| `summary` | `scripts/gen_summary_table.py` | Per-theory CSV/Markdown from a long benchmark CSV |
+| `sample` | `scripts/sample.sh` | Sampled manifest / file copy via `sample_benchmarks.py` |
+| `help` | — | Print built-in help |
 
-`python3 scripts/gen_readme_tables.py --readme README.md`
+Everything after the command name is passed through unchanged (`argparse` flags, extra paths, etc.).
+
+### Typical workflow
+
+1. **Dependencies / binaries:** `./parser_comparison.sh download` (e.g. `--parsers-only`) as needed.  
+2. **External parsers:** `./parser_comparison.sh build-parsers`  
+3. **Main driver + round-trip tool:** from repo root, `mkdir -p build && cd build && cmake .. && cmake --build .` → `smt_parser_comparison`, `roundtrip_tool`.  
+4. **Benchmark:** prepare `results/file_list.txt` (one `.smt2` per line), then e.g.  
+   `./parser_comparison.sh benchmark --file-list results/file_list.txt --timeout 30 --memory-mb 4096 -j 64`  
+5. **Tables and figures:** `./parser_comparison.sh plots`  
+6. **Refresh the results section of this README:** `./parser_comparison.sh readme --readme README.md`
+
+**Paper-aligned defaults (tunable in scripts):** Ubuntu-class OS, `-O3`, single-threaded parser runs, ~30 s timeout, ~4 GiB per-process limit unless you override flags.
+
+### More documentation
+
+- Sampled pipeline details: [docs/run_sampled_full.md](docs/run_sampled_full.md)  
+- Recheck / merge behaviour: [docs/recheck_and_native.md](docs/recheck_and_native.md)  
+- Parser layout and dependencies: [external/PARSER_FEATURES.md](external/PARSER_FEATURES.md)  
+- Per-parser build notes: `external/cvc5/README.md`, `external/smt-switch/README.md`, `external/antlr4_parser/README.md`, `external/jsmtlib/BUILD_INSTRUCTIONS.md`  
+- SMTParser library (submodule): [SOMTParser/README.md](SOMTParser/README.md)
+
+---
+
+## 2. Experimental results
+
+Tables below are generated from [`results/summary/frontend_table.tex`](results/summary/frontend_table.tex) (coverage + appendix scatter numbers). **Regenerate or update after changing the LaTeX source:**
+
+```bash
+./parser_comparison.sh readme
+./parser_comparison.sh readme --readme README.md
+```
+
+Long-form commentary and extra statistics: [results/summary/experimental_evaluation_data_summary.md](results/summary/experimental_evaluation_data_summary.md). Standalone copy of the tables: [results/summary/readme_paper_tables.md](results/summary/readme_paper_tables.md). Native robustness rollup: [results/summary/robustness_summary.md](results/summary/robustness_summary.md).
+
+Scatter PNGs (not embedded here): run `./parser_comparison.sh plots` → `results/frontend_scatter/{time,rss,nodes}/`.
 
 <!--PAPER_TABLES_BEGIN-->
 
@@ -91,49 +140,3 @@ jSMTLIB RSS reflects JVM process RSS and is not directly comparable to C++ front
 | jSMTLIB | 145,747 | 3.925 | 98.69 | 0.278 | 2.62 | 3.497 | 94.71 |
 
 <!--PAPER_TABLES_END-->
-
-## Scatter plots (time / RSS / nodes)
-
-If plots are missing after clone, from the repo root run:
-
-```bash
-./scripts/gen_all_tables_and_plots.sh
-```
-
-Outputs: `results/frontend_scatter/time/`, `results/frontend_scatter/rss/`, `results/frontend_scatter/nodes/` (x-axis: SMTParser, y-axis: baseline; log–log; timeouts as crosses at the boundary).
-
-## Reproducing the main benchmark
-
-1. Build the driver and external parsers: `./scripts/build_all_parsers.sh` (under `external/z3` this produces both `z3_parser` and `z3_parse_vs_solve`). Main driver and round-trip tool: `mkdir -p build && cd build && cmake .. && cmake --build .` → `smt_parser_comparison` and `roundtrip_tool`.
-2. Prepare `results/file_list.txt` (one `.smt2` path per line, absolute or repo-relative).
-3. Run, e.g.  
-   `python3 scripts/run_parser_benchmark.py --file-list results/file_list.txt --timeout 30 --memory-mb 4096 -j 64`  
-   See [docs/run_sampled_full.md](docs/run_sampled_full.md).
-
-## Extended experiments
-
-### 1. Round-trip (parse → `dumpSMT2` → reparse)
-
-- Binary: `roundtrip_tool` (CMake target; after build: `build/roundtrip_tool`).
-- Batch:  
-  `python3 scripts/run_roundtrip_benchmark.py --file-list results/file_list.txt --timeout 30 --memory-mb 4096 -j 32`
-- Outputs: `results/roundtrip/roundtrip_checkpoint.csv`, `results/roundtrip/roundtrip_table.csv` with `ok1` / `ok2` / `nodes1` / `nodes2` / `match_nodes`.
-
-### 2. Robustness summary (native by theory)
-
-After `parser_benchmark_table.csv` exists:
-
-`python3 scripts/summarize_robustness.py`
-
-If `results/roundtrip/roundtrip_table.csv` exists, it is merged automatically. Output: [results/summary/robustness_summary.md](results/summary/robustness_summary.md).
-
-### 3. Parse time vs Z3 solve time
-
-- Binary: `external/z3/z3_parse_vs_solve` (`make -C external/z3`).
-- Batch:  
-  `python3 scripts/run_parse_vs_solve_benchmark.py --file-list results/file_list.txt --solve-timeout-ms 600000 --wall-timeout 120 --memory-mb 4096 -j 8`
-- Outputs: `results/parse_vs_solve/z3_parse_solve_table.csv` (`parse_ms`, `solve_ms`, `parse_over_solve`, …). **Z3 only**, independent of the parse-only main table.
-
-## Subproject
-
-- SMTParser library documentation: [SOMTParser/README.md](SOMTParser/README.md).
