@@ -17,6 +17,7 @@ import re
 import sys
 import csv
 import argparse
+import experiment_presets as ep
 import subprocess
 import resource
 import signal
@@ -28,7 +29,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 BENCHMARK_DIR = REPO_ROOT / "benchmark" / "non-incremental"
 BINARY_NAMES = ["smt_parser_comparison", "build/smt_parser_comparison"]
 PARSE_TIMEOUT_SEC = 10
-PROCESS_TIMEOUT_SEC = PARSE_TIMEOUT_SEC + 5
 DEFAULT_MEMORY_MB = 4096
 CHECKPOINT_CSV = REPO_ROOT / "results" / "parser_benchmark_checkpoint.csv"
 TABLE_CSV = REPO_ROOT / "results" / "parser_benchmark_table.csv"
@@ -169,7 +169,9 @@ def get_theory_from_path(file_path, benchmark_dir):
         return "default"
 
 
-def parse_test_output(stdout, stderr):
+def parse_test_output(stdout, stderr, cap_sec=None):
+    if cap_sec is None:
+        cap_sec = PARSE_TIMEOUT_SEC
     time_ms = memory_kb = ast_nodes = ""
     status = "fail"
     text = (stdout or "") + "\n" + (stderr or "")
@@ -195,7 +197,7 @@ def parse_test_output(stdout, stderr):
     if status != "timeout" and "命令执行超时" in text:
         status = "timeout"
         if not time_ms:
-            time_ms = str(PARSE_TIMEOUT_SEC * 1000)
+            time_ms = str(cap_sec * 1000)
     return status, time_ms, memory_kb, ast_nodes
 
 
@@ -238,7 +240,7 @@ def run_one(binary, file_path, parser_name, timeout_sec, memory_mb):
                 text=True, env=env,
             )
         try:
-            stdout, stderr = proc.communicate(timeout=PROCESS_TIMEOUT_SEC)
+            stdout, stderr = proc.communicate(timeout=timeout_sec + 5)
         except subprocess.TimeoutExpired:
             # 先杀 smt_parser_comparison 的子进程所在进程组（sh + cvc5_parser 等），再杀主进程，避免孤儿
             _kill_children_process_groups(proc.pid)
@@ -248,7 +250,7 @@ def run_one(binary, file_path, parser_name, timeout_sec, memory_mb):
             except Exception:
                 pass
             return "timeout", str(timeout_sec * 1000), "", ""
-        status, time_ms, memory_kb, ast_nodes = parse_test_output(stdout, stderr)
+        status, time_ms, memory_kb, ast_nodes = parse_test_output(stdout, stderr, cap_sec=timeout_sec)
         if proc.returncode != 0 and status == "ok":
             status = "fail"
         if not time_ms and "命令执行超时" in (stderr or "") + (stdout or ""):
@@ -289,21 +291,45 @@ def main():
     ap = argparse.ArgumentParser(description="Parser benchmark, 10s timeout, checkpoint/resume")
     ap.add_argument("--benchmark-dir", type=Path, default=BENCHMARK_DIR, help="Benchmark root (for scan or theory name)")
     ap.add_argument("--file-list", type=Path, default=None, help="One path per line, no scan")
-    ap.add_argument("--timeout", type=int, default=PARSE_TIMEOUT_SEC)
-    ap.add_argument("--memory-mb", type=int, default=DEFAULT_MEMORY_MB)
+    ap.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        help="Per-parser per-instance timeout (seconds); default {} without --preset, or from --preset".format(
+            PARSE_TIMEOUT_SEC
+        ),
+    )
+    ap.add_argument(
+        "--memory-mb",
+        type=int,
+        default=None,
+        help="RLIMIT_AS cap per child (MiB); default {} without --preset, or from --preset".format(DEFAULT_MEMORY_MB),
+    )
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--checkpoint", type=Path, default=CHECKPOINT_CSV)
     ap.add_argument("--table", type=Path, default=TABLE_CSV)
     ap.add_argument("--table-wide", type=Path, default=TABLE_WIDE_CSV)
     ap.add_argument("--log-dir", type=Path, default=None)
-    ap.add_argument("--jobs", "-j", type=int, default=24,
-                    help="并行任务数（默认 24，避免打满 CPU；大机器可设 JOBS=64 等）")
+    ap.add_argument(
+        "--jobs",
+        "-j",
+        type=int,
+        default=None,
+        help="并行任务数（默认 24，避免打满 CPU；大机器可设 JOBS=64 等；--preset sat2026 默认 32）",
+    )
     ap.add_argument("--exclude-parser", type=str, action="append", default=None, metavar="NAME",
                     help="排除指定 parser，不参与 benchmark（可多次指定，如 --exclude-parser native）")
     ap.add_argument("--only-parser", type=str, default=None, metavar="NAME",
                     help="仅运行指定 parser，重跑后结果会合并进主表（用于修好某个 parser 后只重跑该 parser）")
+    ep.add_preset_arguments(ap)
     args = ap.parse_args()
+    ep.require_known_preset(args.preset)
+    args.timeout = ep.pick(args.preset, "timeout", args.timeout, PARSE_TIMEOUT_SEC)
+    args.memory_mb = ep.pick(args.preset, "memory_mb", args.memory_mb, DEFAULT_MEMORY_MB)
+    args.jobs = ep.pick(args.preset, "jobs", args.jobs, 24)
+    if args.preset:
+        print("preset {}: timeout={}s memory_mb={} jobs={}".format(args.preset, args.timeout, args.memory_mb, args.jobs))
 
     def resolve_path(p):
         if p is None:

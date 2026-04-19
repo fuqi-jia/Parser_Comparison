@@ -116,12 +116,22 @@ external/cvc5/cvc5-Linux-*/
 external/cvc5/cvc5-*-static/
 external/cvc5/cvc5-install/
 external/cvc5/cvc5-cvc5-*/
+external/cvc5/*.zip
+
+# antlr / jsmtlib：下载的 JAR、grammar zip、jSMTLIB SDK 目录
+external/antlr4_parser/*.jar
+external/antlr4_parser/*.zip
+external/jsmtlib/jSMTLIB-*/
+external/jsmtlib/*.zip
 
 # z3 源码（external/z3 下克隆的 z3 仓库）
 external/z3/z3-z3-*/
 external/z3/z3-*
 
-# smt-switch 源码与构建（保留 README、src/smt_switch_parser.cpp、CMakeLists.txt 包装器）
+# smt-switch 源码与构建（保留 README、src/smt_switch_parser.cpp、顶层 CMake 包装）
+# CVC5_HOME 常指向 external/smt-switch/src/cvc5（与顶层 external/smt-switch/cvc5/ 不同路径，需单独忽略）
+external/smt-switch/src/cvc5/
+external/smt-switch/src/*.zip
 external/smt-switch/.git/
 external/smt-switch/build/
 external/smt-switch/bitwuzla/
@@ -147,10 +157,13 @@ external/smt-switch/VERSION
 external/smt-switch/.clang-format
 external/smt-switch/.clangd
 external/smt-switch/issues.md
-# smt-switch 发布包（如 smt-switch-1.0.6 解压/安装目录）；保留 CMakeLists.txt 以便提交 location.hh 等补丁
+# smt-switch 上游源码/发布包（由 prepare / download 拉取；仓库只保留少量 CMake 补丁）
 smt-switch-*/
 external/smt-switch/smt-switch-*/
-# 例外：允许提交 smt-switch-1.0.6 的 CMakeLists.txt（Bison location.hh 等修复）
+external/smt-switch/*.tar.gz
+external/smt-switch/*.zip
+external/smt-switch/*.tgz
+# 例外：允许提交 smt-switch-1.0.6 内的补丁 CMakeLists（Bison location.hh、cvc5 子构建等）
 !external/smt-switch/smt-switch-1.0.6/
 external/smt-switch/smt-switch-1.0.6/*
 !external/smt-switch/smt-switch-1.0.6/CMakeLists.txt

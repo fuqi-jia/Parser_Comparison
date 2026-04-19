@@ -13,36 +13,67 @@ chmod +x ./parser_comparison.sh    # once, if your clone is not executable
 ./parser_comparison.sh help          # list commands and examples
 ```
 
+**Fresh clone (GitHub-friendly):** this repository keeps **wrapper code** under `external/` (CMake/Make, small drivers). Large third-party trees (cvc5, Z3 drops, smt-switch upstream, jSMTLIB SDK, …) are **not** meant to be committed—run **`./parser_comparison.sh prepare`** to init submodules (e.g. `SOMTParser`) and fetch everything `download.sh` supports. **`./scripts/prune_external_vendored.sh`** deletes those trees **on disk** (dry-run first, then `--yes`).
+
+**Already pushed vendor blobs to GitHub but want to keep local copies:** use **`./parser_comparison.sh git-untrack-vendored`** (dry-run) then **`./parser_comparison.sh git-untrack-vendored --yes`**. That runs `git rm --cached` only—**working tree files are not deleted**; after you `commit` and `push`, the default branch tree on GitHub no longer contains those paths. Old commits still store blobs until you rewrite history (e.g. [`git filter-repo`](https://github.com/newren/git-filter-repo)); optional **`--sweep-ignored`** also untracks anything under `external/` that is tracked but matches current `.gitignore`. See `external/PARSER_FEATURES.md`.
+
 ### Command reference
 
 | Command | Calls | Purpose |
 |--------|--------|---------|
-| `benchmark` / `bench` | `scripts/run_parser_benchmark.py` | Multi-parser parse-only run over a file list |
+| `benchmark` / `bench` | `scripts/run_parser_benchmark.py` | Multi-parser parse-only run over a file list; optional `--preset sat2026` (alias `--param`) |
 | `plots` | `scripts/gen_all_tables_and_plots.sh` | Per-theory summaries, `results/summary/frontend_table.tex`, scatter PNGs under `results/frontend_scatter/` |
 | `readme` | `scripts/gen_readme_tables.py` | Paper tables from `frontend_table.tex` + splice standalone summaries; add `--readme README.md` |
-| `roundtrip` | `scripts/run_roundtrip_benchmark.py` | Native parse → `dumpSMT2` → reparse; `results/roundtrip/` (`*.csv`, `roundtrip_summary.md`) |
+| `presets` / `preset-list` | `scripts/experiment_presets.py` | List named `--preset` bundles (`sat2026`, …) |
+| `roundtrip` | `scripts/run_roundtrip_benchmark.py` | **Same-engine** round-trip: native parse → `dumpSMT2` → native reparse (differs from cross-parser `benchmark`); `results/roundtrip/`; optional `--preset sat2026` |
 | `robustness` | `scripts/summarize_robustness.py` | Native `ok`/`timeout`/`fail` by theory; `results/robustness/robustness_summary.md`; merges `roundtrip_table.csv` if present |
-| `parse-vs-solve` | `scripts/run_parse_vs_solve_benchmark.py` | Z3 parse vs `check_sat` wall clock; `results/parse_vs_solve/` (`*.csv`, `parse_vs_solve_summary.md`) |
+| `parse-vs-solve` | `scripts/run_parse_vs_solve_benchmark.py` | Z3 parse vs `check_sat` wall clock; `results/parse_vs_solve/` (`*.csv`, `parse_vs_solve_summary.md`); optional `--preset sat2026` |
 | `sampled` | `scripts/run_sampled_full.sh` | Sampled pipeline (`--fresh`, `--skip-sample`, …) |
-| `build-parsers` | `scripts/build_all_parsers.sh` | Build drivers under `external/*` (Z3, cvc5, …) |
-| `download` | `scripts/download.sh` | Benchmarks / parser binaries |
+| `build` | `scripts/build_all.sh` | **Full** build: `build-internal` then `build-external` (extra args → native `cmake --build` only) |
+| `build-internal` | `scripts/build_native.sh` | CMake configure + build for `smt_parser_comparison`, `roundtrip_tool`, … (default `build/`; `BUILD_DIR`; extra args → `cmake --build`) |
+| `build-external` | `scripts/build_all_parsers.sh` | Build all drivers under `external/*` (same as legacy `build-parsers`) |
+| `prepare` | `scripts/prepare.sh` | **After clone:** `git submodule update --init --recursive`, then `download.sh` (same flags: `--parsers-only`, `--benchmark-only`, …) |
+| `download` | `scripts/download.sh` | Benchmarks / parser deps only (no submodule init); use **`prepare`** on new clones |
+| `git-untrack-vendored` | `scripts/git_untrack_external_vendored.sh` | `git rm --cached` for vendored paths under `external/`; **`--yes`** to apply; optional **`--sweep-ignored`**; local files stay |
 | `summary` | `scripts/gen_summary_table.py` | Per-theory CSV/Markdown from a long benchmark CSV |
 | `sample` | `scripts/sample.sh` | Sampled manifest / file copy via `sample_benchmarks.py` |
 | `help` | — | Print built-in help |
 
 Everything after the command name is passed through unchanged (`argparse` flags, extra paths, etc.).
 
+### Common experiment settings (time, memory, parallelism)
+
+The same **logical** limits apply across all heavy runs in this repo (multi-parser compare, round-trip, Z3 parse-vs-solve, sampled pipelines, recheck scripts): how long each instance may run, how much address space a child may use, and how many workers run in parallel. Those are **not** tied to a single command — each driver just exposes them under its own CLI names (see `--help` per tool).
+
+| Dimension | Meaning | Typical CLI flags |
+| --- | --- | --- |
+| **Instance / driver time budget** | Wall clock allowed for one benchmark file in the driver | `--timeout` (seconds) on `benchmark`, `roundtrip`, and `scripts/re_run_parser_benchmark.py`; on `parse-vs-solve` also `--wall-timeout` (outer wrapper) and `--solve-timeout-ms` (passed into Z3) |
+| **Per-process memory cap** | `RLIMIT_AS`-style limit for child processes (MiB) | `--memory-mb` |
+| **Host parallelism** | Concurrent benchmark workers (parsers stay single-threaded inside each run) | `-j` / `--jobs` |
+
+**Built-in defaults when you omit flags and `--preset`:**
+
+| Entry point | Relevant flags | Defaults |
+| --- | --- | --- |
+| `./parser_comparison.sh benchmark` | `--timeout`, `--memory-mb`, `-j` | **10** s, **4096** MiB, **24** |
+| `./parser_comparison.sh roundtrip` | `--timeout`, `--memory-mb`, `-j` | **30** s, **4096** MiB, **24** |
+| `./parser_comparison.sh parse-vs-solve` | `--solve-timeout-ms`, `--wall-timeout`, `--memory-mb`, `-j` | **600000**, **120** s, **4096** MiB, **8** |
+| `python3 scripts/re_run_parser_benchmark.py` | `--timeout`, `--memory-mb` (see `--help`) | **10** s, **4096** MiB |
+| `./parser_comparison.sh sampled` | Benchmark / recheck invoke Python drivers with flags in [`scripts/run_sampled_full.sh`](scripts/run_sampled_full.sh) (e.g. `--timeout 10 --memory-mb 4096`; no `-j` → benchmark default **24**) | align that script with the same budgets you use elsewhere |
+
+**Named bundles:** `--preset` / `--param` (e.g. `sat2026`) on supported drivers loads a shared bundle from [`scripts/experiment_presets.py`](scripts/experiment_presets.py); run `./parser_comparison.sh presets` to list names. Explicit flags always **override** the preset. Post-processing only (`plots`, `readme`, `robustness`, `summary`, …) does not consume these resource flags.
+
 ### Typical workflow
 
-1. **Dependencies / binaries:** `./parser_comparison.sh download` (e.g. `--parsers-only`) as needed.  
-2. **External parsers:** `./parser_comparison.sh build-parsers`  
-3. **Main driver + round-trip tool:** from repo root, `mkdir -p build && cd build && cmake .. && cmake --build .` → `smt_parser_comparison`, `roundtrip_tool`.  
-4. **Benchmark:** prepare `results/file_list.txt` (one `.smt2` per line), then e.g.  
-   `./parser_comparison.sh benchmark --file-list results/file_list.txt --timeout 30 --memory-mb 4096 -j 64`  
-5. **Tables and figures:** `./parser_comparison.sh plots`  
-6. **Refresh the results section of this README:** `./parser_comparison.sh readme --readme README.md` (paper tables + standalone experiment blocks).
+1. **Fetch deps:** `./parser_comparison.sh prepare` (or `prepare --parsers-only` / `prepare --benchmark-only` as needed).  
+2. **Compile:** `./parser_comparison.sh build` (native + external), or split as `./parser_comparison.sh build-internal` then `./parser_comparison.sh build-external` (same as `build-parsers`). Use `BUILD_DIR=/path ./parser_comparison.sh build-internal` if you want a non-default CMake tree.  
+3. **Benchmark:** prepare `results/file_list.txt` (one `.smt2` per line), then e.g.  
+   `./parser_comparison.sh benchmark --file-list results/file_list.txt --preset sat2026`  
+   (or set `--timeout` / `--memory-mb` / `-j` explicitly; see **Common experiment settings**.)  
+4. **Tables and figures:** `./parser_comparison.sh plots`  
+5. **Refresh the results section of this README:** `./parser_comparison.sh readme --readme README.md` (paper tables + standalone experiment blocks).
 
-**Paper-aligned defaults (tunable in scripts):** Ubuntu-class OS, `-O3`, single-threaded parser runs, ~30 s timeout, ~4 GiB per-process limit unless you override flags.
+**Paper-style full-artifact run:** use `--preset sat2026` on `benchmark`, `roundtrip`, and `parse-vs-solve` (values in `experiment_presets.py`). Other environment notes: Ubuntu-class OS, `-O3`, single-threaded *per parser invocation* inside the driver unless you change build flags.
 
 ### More documentation
 
@@ -143,43 +174,23 @@ jSMTLIB RSS reflects JVM process RSS and is not directly comparable to C++ front
 
 ### Standalone experiments (not multi-parser comparison)
 
-Each experiment writes its own folder under `results/` — CSV checkpoints/tables plus a Markdown summary (`*_summary.md`). **Commands:**
-
-| Experiment | Command (example) | Folder |
-| --- | --- | --- |
-| Round-trip | `./parser_comparison.sh roundtrip --file-list results/file_list.txt --timeout 30 --memory-mb 4096 -j 32` | `results/roundtrip/` |
-| Robustness | `./parser_comparison.sh robustness` | `results/robustness/` |
-| Z3 parse vs solve | `./parser_comparison.sh parse-vs-solve --file-list results/file_list.txt --timeout 30 --memory-mb 4096 -j 32` (build `z3_parse_vs_solve` in `external/z3/` first) | `results/parse_vs_solve/` |
-
-After updating summaries, splice them into this README (and write `results/summary/readme_standalone_experiments.md`) with `./parser_comparison.sh readme --readme README.md`.
+Same presentation style as **Front-end coverage** above: section titles plus tables of measured outcomes only. Drivers and refresh workflow are in **§1**. **Round-trip** is deliberately *not* “two different parsers on the same file”: it stress-tests **one** implementation through print–reparse; cross-front-end counts appear in the main benchmark tables.
 
 <!--EXTENDED_RESULTS_BEGIN-->
 
-_This block is auto-generated. Do not edit by hand._ Regenerate summaries by running `./parser_comparison.sh roundtrip`, `robustness`, or `parse-vs-solve`, then `./parser_comparison.sh readme --readme README.md`.
+## Round-trip correctness (SMTParser)
+
+Two experimental settings are common in front-end work: **(A) same-engine parse → print → reparse** and **(B) cross-parser** runs on one file. This table is **(A) only**: SMTParser reads the original script, emits SMT2 via `dumpSMT2`, then SMTParser parses that dump again (two parser objects, **one** implementation). The intermediate file can change structure, so first-pass and second-pass **node counts are not tautologically equal**—`mismatch` is informative. **(B)** is the multi-parser `benchmark`, which records `ast_nodes` per tool on the same path.
+
+_No aggregate results yet._
 
 ---
 
-# Round-trip (SMTParser)
+## Native parser robustness by theory (SMTParser)
 
-Parse → linear SMT2 (`dumpSMT2`) → second parse on the same engine; success requires both parses without error and matching AST node counts (`match_nodes=1`).
+Per-theory counts of native front-end outcomes (`ok`, `timeout`, `fail`, `other`) on the evaluated instances.
 
-Primary CSV: `results/roundtrip/roundtrip_table.csv`.
-
-_No table yet._ Run:
-
-```bash
-./parser_comparison.sh roundtrip --file-list results/file_list.txt --timeout 30 --memory-mb 4096 -j 32
-```
-
-This file is regenerated when the round-trip benchmark finishes.
-
----
-
-# Native (SMTParser) robustness summary
-
-Source: rows with `parser=native` in `parser_benchmark_table.csv`; grouped by theory directory name (e.g. `QF_BV`) in the benchmark path.
-
-## Overall totals
+### Overall totals
 
 | Metric | Count | Share |
 | --- | ---: | ---: |
@@ -188,7 +199,7 @@ Source: rows with `parser=native` in `parser_benchmark_table.csv`; grouped by th
 | fail | 0 | 0.0000% |
 | other | 0 | 0.0000% |
 
-## By theory family
+### By theory family
 
 | Theory | ok | timeout | fail | other | total | fail%+timeout% |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -203,20 +214,10 @@ Source: rows with `parser=native` in `parser_benchmark_table.csv`; grouped by th
 
 ---
 
-# Z3 parse vs solve (standalone)
+## Z3 parse vs solver wall time (standalone)
 
-Two timed passes per instance in one process: empty-assertions `check-sat` (parse path) vs full `check-sat` (includes solving). Columns `parse_ms` / `solve_ms` are wall-clock milliseconds from the instrumented binary.
+Per instance: empty-assertions `check-sat` (parse path) vs full `check-sat` (includes solving); `parse_ms` / `solve_ms` are wall-clock milliseconds in one Z3 process.
 
-Primary CSV: `results/parse_vs_solve/z3_parse_solve_table.csv`.
-
-_No table yet._ Build `external/z3/z3_parse_vs_solve`, then run:
-
-```bash
-./parser_comparison.sh parse-vs-solve --file-list results/file_list.txt --timeout 30 --memory-mb 4096 -j 32
-```
-
-(build `z3_parse_vs_solve` under `external/z3/` first.)
-
-This file is regenerated when the parse-vs-solve benchmark finishes.
+_No aggregate results yet._
 
 <!--EXTENDED_RESULTS_END-->

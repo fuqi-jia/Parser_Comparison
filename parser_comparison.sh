@@ -17,8 +17,10 @@ usage() {
 
       benchmark | bench
           Run the multi-parser parse-only benchmark.
+          Optional --preset sat2026 fixes timeout/memory/jobs (see scripts/experiment_presets.py).
           Same as: python3 scripts/run_parser_benchmark.py ...
           Example:
+            ./parser_comparison.sh benchmark --file-list results/file_list.txt --preset sat2026
             ./parser_comparison.sh benchmark --file-list results/file_list.txt -j 64 --timeout 30
 
       plots
@@ -37,8 +39,12 @@ usage() {
             ./parser_comparison.sh readme
             ./parser_comparison.sh readme --readme README.md
 
+      presets | preset-list
+          List named parameter bundles (--preset / --param) for long runs.
+          Same as: python3 scripts/experiment_presets.py list
+
       roundtrip
-          SMTParser parse → dumpSMT2 → reparse batch run.
+          Same-engine round-trip: SMTParser → dumpSMT2 → SMTParser reparse (not cross-parser).
           Writes results/roundtrip/roundtrip_table.csv and roundtrip_summary.md.
           Same as: python3 scripts/run_roundtrip_benchmark.py ...
           Example:
@@ -65,16 +71,50 @@ usage() {
             ./parser_comparison.sh sampled
             ./parser_comparison.sh sampled --fresh
 
-      build-parsers
-          Build all external parser drivers under external/.
+      build
+          Build everything: native CMake targets then all external parser drivers.
+          Same as: ./scripts/build_all.sh ...
+          Extra arguments are forwarded only to the native cmake --build step.
+          Example:
+            ./parser_comparison.sh build
+            ./parser_comparison.sh build --parallel 16
+
+      build-internal
+          CMake configure + build for this repo only (smt_parser_comparison, roundtrip_tool, …).
+          Same as: ./scripts/build_native.sh ...
+          Build directory defaults to build/; override with BUILD_DIR=/path.
+          Extra arguments go to cmake --build (e.g. --parallel 8, --target roundtrip_tool).
+          Example:
+            ./parser_comparison.sh build-internal
+            ./parser_comparison.sh build-internal --parallel 16
+
+      build-external | build-parsers | build_parsers
+          Build all external parser drivers under external/ (alias: build-parsers).
           Same as: ./scripts/build_all_parsers.sh [optional-external-root]
           Example:
+            ./parser_comparison.sh build-external
             ./parser_comparison.sh build-parsers
 
+      prepare
+          After clone: init git submodules (e.g. SOMTParser) then run download.sh for all external deps + benchmarks.
+          Same as: ./scripts/prepare.sh ...
+          Pass-through flags match download.sh (--parsers-only, --benchmark-only, --theories …).
+          Example:
+            ./parser_comparison.sh prepare
+            ./parser_comparison.sh prepare --parsers-only
+
       download
-          Download benchmarks / parser binaries (wrapper around scripts/download.sh).
+          Download benchmarks / parser binaries only (no submodule init). Prefer prepare on fresh clones.
           Example:
             ./parser_comparison.sh download --parsers-only
+
+      git-untrack-vendored
+          Remove vendored paths under external/ from Git tracking only (git rm --cached); local files stay.
+          Dry-run by default; use --yes. Optional --sweep-ignored to also untrack tracked-but-ignored files.
+          Same as: ./scripts/git_untrack_external_vendored.sh ...
+          Example:
+            ./parser_comparison.sh git-untrack-vendored
+            ./parser_comparison.sh git-untrack-vendored --yes --sweep-ignored
 
       summary
           Per-theory CSV/Markdown summary from a long benchmark table.
@@ -115,6 +155,9 @@ case "${CMD}" in
     readme)
         exec python3 "${SCRIPTS}/gen_readme_tables.py" "$@"
         ;;
+    presets|preset-list)
+        exec python3 "${SCRIPTS}/experiment_presets.py" list
+        ;;
     roundtrip)
         exec python3 "${SCRIPTS}/run_roundtrip_benchmark.py" "$@"
         ;;
@@ -127,11 +170,23 @@ case "${CMD}" in
     sampled)
         exec bash "${SCRIPTS}/run_sampled_full.sh" "$@"
         ;;
-    build-parsers|build_parsers)
+    build)
+        exec bash "${SCRIPTS}/build_all.sh" "$@"
+        ;;
+    build-internal|build_internal)
+        exec bash "${SCRIPTS}/build_native.sh" "$@"
+        ;;
+    build-external|build_external|build-parsers|build_parsers)
         exec bash "${SCRIPTS}/build_all_parsers.sh" "$@"
+        ;;
+    prepare)
+        exec bash "${SCRIPTS}/prepare.sh" "$@"
         ;;
     download)
         exec bash "${SCRIPTS}/download.sh" "$@"
+        ;;
+    git-untrack-vendored|git_untrack_vendored)
+        exec bash "${SCRIPTS}/git_untrack_external_vendored.sh" "$@"
         ;;
     summary)
         exec python3 "${SCRIPTS}/gen_summary_table.py" "$@"

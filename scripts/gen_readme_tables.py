@@ -17,10 +17,10 @@ DEFAULT_TEX = REPO / "results" / "summary" / "frontend_table.tex"
 EXTENDED_BEGIN = "<!--EXTENDED_RESULTS_BEGIN-->"
 EXTENDED_END = "<!--EXTENDED_RESULTS_END-->"
 
-STANDALONE_SUMMARIES = (
-    ("results/roundtrip/roundtrip_summary.md", "roundtrip"),
-    ("results/robustness/robustness_summary.md", "robustness"),
-    ("results/parse_vs_solve/parse_vs_solve_summary.md", "parse-vs-solve"),
+STANDALONE_SUMMARY_FILES = (
+    "results/roundtrip/roundtrip_summary.md",
+    "results/robustness/robustness_summary.md",
+    "results/parse_vs_solve/parse_vs_solve_summary.md",
 )
 
 
@@ -169,22 +169,16 @@ def splice_readme(readme_path, md_block):
 
 def build_standalone_experiments_md():
     """Concatenate per-experiment summaries from results/<experiment>/."""
-    parts = [
-        "_This block is auto-generated. Do not edit by hand._ "
-        "Regenerate summaries by running `./parser_comparison.sh roundtrip`, `robustness`, or `parse-vs-solve`, "
-        "then `./parser_comparison.sh readme --readme README.md`.",
-        "",
-    ]
-    for rel, sh_cmd in STANDALONE_SUMMARIES:
+    parts = []
+    for i, rel in enumerate(STANDALONE_SUMMARY_FILES):
         path = (REPO / rel).resolve()
-        parts.append("---")
-        parts.append("")
+        if i:
+            parts.append("---")
+            parts.append("")
         if path.is_file():
             parts.append(path.read_text(encoding="utf-8").rstrip())
         else:
-            parts.append(
-                "_Missing `{}`._ Run `./parser_comparison.sh {} …`.".format(rel, sh_cmd)
-            )
+            parts.append("_Summary not present for this slot._")
         parts.append("")
     return "\n".join(parts).strip() + "\n"
 

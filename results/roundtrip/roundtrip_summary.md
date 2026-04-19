@@ -1,13 +1,5 @@
-# Round-trip (SMTParser)
+## Round-trip correctness (SMTParser)
 
-Parse → linear SMT2 (`dumpSMT2`) → second parse on the same engine; success requires both parses without error and matching AST node counts (`match_nodes=1`).
+Two experimental settings are common in front-end work: **(A) same-engine parse → print → reparse** and **(B) cross-parser** runs on one file. This table is **(A) only**: SMTParser reads the original script, emits SMT2 via `dumpSMT2`, then SMTParser parses that dump again (two parser objects, **one** implementation). The intermediate file can change structure, so first-pass and second-pass **node counts are not tautologically equal**—`mismatch` is informative. **(B)** is the multi-parser `benchmark`, which records `ast_nodes` per tool on the same path.
 
-Primary CSV: `results/roundtrip/roundtrip_table.csv`.
-
-_No table yet._ Run:
-
-```bash
-./parser_comparison.sh roundtrip --file-list results/file_list.txt --timeout 30 --memory-mb 4096 -j 32
-```
-
-This file is regenerated when the round-trip benchmark finishes.
+_No aggregate results yet._

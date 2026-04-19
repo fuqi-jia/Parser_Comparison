@@ -1,5 +1,7 @@
 # Parser comparison — feature matrix
 
+**Upstream trees:** large third-party drops under `external/*/` are fetched by **`./parser_comparison.sh prepare`** (or `scripts/download.sh` alone). The Git repository is expected to keep only wrappers and small patches, not full cvc5/Z3/smt-switch SDK trees.
+
 | Parser | Language | Main dependencies | Parsing approach | Build | Notes |
 |--------|----------|-------------------|------------------|-------|-------|
 | **cvc5** | C++17 | cvc5 (C API + parser libs), libcvc5, libcvc5parser, libpicpoly/libpicpolyxx, libcadical, GMP/gmpxx; **clang++** + **libc++** for libcxx prebuilts | In-process cvc5 C API on SMT-LIB | CMake + make; prebuilt `cvc5-Linux-*` or source build | JSON with `ast_node_count`; libcxx prebuilts need `USE_CLANG_LIBCXX=1` or clang+libc++ |

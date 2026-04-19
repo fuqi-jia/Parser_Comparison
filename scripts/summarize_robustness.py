@@ -103,11 +103,11 @@ def main():
                     rt_total["fail"] += 1
 
     lines = [
-        "# Native (SMTParser) robustness summary",
+        "## Native parser robustness by theory (SMTParser)",
         "",
-        "Source: rows with `parser=native` in `parser_benchmark_table.csv`; grouped by theory directory name (e.g. `QF_BV`) in the benchmark path.",
+        "Per-theory counts of native front-end outcomes (`ok`, `timeout`, `fail`, `other`) on the evaluated instances.",
         "",
-        "## Overall totals",
+        "### Overall totals",
         "",
     ]
     nt = sum(native_total.values())
@@ -118,7 +118,7 @@ def main():
         pct = (100.0 * c / nt) if nt else 0.0
         lines.append("| {} | {} | {:.4f}% |".format(k, c, pct))
     lines.append("")
-    lines.append("## By theory family")
+    lines.append("### By theory family")
     lines.append("")
     hdr = "| Theory | ok | timeout | fail | other | total | fail%+timeout% |"
     sep = "| --- | ---: | ---: | ---: | ---: | ---: | ---: |"
@@ -137,9 +137,7 @@ def main():
     lines.append("")
 
     if rt_by_theory and rt_total:
-        lines.append("## Round-trip experiment (optional)")
-        lines.append("")
-        lines.append("Source: `{}`".format(rt_path))
+        lines.append("### Round-trip side summary (when round-trip run is available)")
         lines.append("")
         lines.append("| Theory | roundtrip_ok | mismatch | fail | timeout |")
         lines.append("| --- | ---: | ---: | ---: | ---: |")

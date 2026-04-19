@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""SMTParser parse -> dumpSMT2 -> reparse round-trip; parallel runs + checkpoint."""
+"""Same-engine round-trip: SMTParser parse -> dumpSMT2 -> reparse with SMTParser again.
+
+Cross-parser comparisons (same file, different front ends) live in the main
+benchmark driver; this script only checks serialization consistency within one
+implementation (node counts can still diverge after dump).
+"""
 from __future__ import print_function
 
 import argparse
 import csv
 import json
 import os
+import experiment_presets as ep
 import resource
 import signal
 import subprocess
@@ -184,47 +190,28 @@ def theory_from_benchmark_path(p):
 def write_roundtrip_summary(table_path, summary_path):
     """Markdown rollup for this standalone experiment (same folder as CSV)."""
     summary_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        rel = table_path.resolve().relative_to(REPO_ROOT.resolve())
-    except ValueError:
-        rel = table_path.name
     lines = [
-        "# Round-trip (SMTParser)",
+        "## Round-trip correctness (SMTParser)",
         "",
-        "Parse → linear SMT2 (`dumpSMT2`) → second parse on the same engine; success requires both parses without error and matching AST node counts (`match_nodes=1`).",
-        "",
-        "Primary CSV: `{}`.".format(rel),
+        "Two experimental settings are common in front-end work: **(A) same-engine parse → print → reparse** and **(B) cross-parser** runs on one file. This table is **(A) only**: SMTParser reads the original script, emits SMT2 via `dumpSMT2`, then SMTParser parses that dump again (two parser objects, **one** implementation). The intermediate file can change structure, so first-pass and second-pass **node counts are not tautologically equal**—`mismatch` is informative. **(B)** is the multi-parser `benchmark`, which records `ast_nodes` per tool on the same path.",
         "",
     ]
     if not table_path.is_file():
-        lines.extend(
-            [
-                "_No table yet._ Run:",
-                "",
-                "```bash",
-                "./parser_comparison.sh roundtrip --file-list results/file_list.txt --timeout 30 --memory-mb 4096 -j 32",
-                "```",
-                "",
-            ]
-        )
+        lines.append("_No aggregate results yet._")
         summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return
 
     with open(table_path, "r", encoding="utf-8", newline="") as f:
         rows = list(csv.DictReader(f))
     if not rows:
-        lines.append("_Table has no data rows yet._")
+        lines.append("_No aggregate results yet._")
         summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return
 
     n = len(rows)
     st_counts = Counter((r.get("status") or "").strip().lower() or "unknown" for r in rows)
 
-    lines.append("## Overall")
-    lines.append("")
-    lines.append(
-        "In this driver, `status=ok` means both parses succeeded and node counts matched (`match_nodes=1` in the CSV).",
-    )
+    lines.append("### Overall")
     lines.append("")
     lines.append("| Status | Count | Share |")
     lines.append("| --- | ---: | ---: |")
@@ -240,7 +227,7 @@ def write_roundtrip_summary(table_path, summary_path):
         th = theory_from_benchmark_path(r.get("file") or "")
         by_th[th][(r.get("status") or "").strip().lower() or "unknown"] += 1
 
-    lines.append("## By theory family (row counts by `status`)")
+    lines.append("### By theory family")
     lines.append("")
     lines.append("| Theory | ok | mismatch | fail | timeout | other | total |")
     lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
@@ -260,22 +247,44 @@ def write_roundtrip_summary(table_path, summary_path):
             )
         )
     lines.append("")
-    lines.append(
-        "_Regenerate this file by re-running the round-trip benchmark; refresh README with `./parser_comparison.sh readme --readme README.md`._"
-    )
     summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def main():
-    ap = argparse.ArgumentParser(description="SOMTParser round-trip benchmark")
+    ap = argparse.ArgumentParser(
+        description="Same-engine SMTParser round-trip (parse → dumpSMT2 → reparse); not cross-parser."
+    )
     ap.add_argument("--file-list", type=Path, required=True)
-    ap.add_argument("--timeout", type=int, default=30)
-    ap.add_argument("--memory-mb", type=int, default=4096)
-    ap.add_argument("--jobs", "-j", type=int, default=24)
+    ap.add_argument(
+        "--timeout",
+        type=int,
+        default=None,
+        help="Per-instance timeout passed to roundtrip_tool (seconds); default 30, or from --preset",
+    )
+    ap.add_argument(
+        "--memory-mb",
+        type=int,
+        default=None,
+        help="RLIMIT_AS cap per child (MiB); default 4096, or from --preset",
+    )
+    ap.add_argument(
+        "--jobs",
+        "-j",
+        type=int,
+        default=None,
+        help="Parallel workers; default 24, or from --preset",
+    )
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--checkpoint", type=Path, default=CHECKPOINT)
     ap.add_argument("--table", type=Path, default=TABLE)
+    ep.add_preset_arguments(ap)
     args = ap.parse_args()
+    ep.require_known_preset(args.preset)
+    args.timeout = ep.pick(args.preset, "timeout", args.timeout, 30)
+    args.memory_mb = ep.pick(args.preset, "memory_mb", args.memory_mb, 4096)
+    args.jobs = ep.pick(args.preset, "jobs", args.jobs, 24)
+    if args.preset:
+        print("preset {}: timeout={}s memory_mb={} jobs={}".format(args.preset, args.timeout, args.memory_mb, args.jobs))
 
     fl = (REPO_ROOT / args.file_list).resolve() if not args.file_list.is_absolute() else args.file_list.resolve()
     files = load_file_list(fl)

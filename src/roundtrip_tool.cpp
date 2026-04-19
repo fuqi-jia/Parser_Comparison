@@ -1,6 +1,14 @@
 /**
- * SOMTParser round-trip: parse -> dumpSMT2 -> parse dumped file.
- * Runs heavy work in a child process; parent applies wall-clock timeout.
+ * Single-engine round-trip for SMTParser (SOMTParser): parse original SMT2,
+ * dump linear SMT2 via dumpSMT2(), then parse the dump again with a second
+ * Parser instance of the *same* implementation.
+ *
+ * This is not a cross-parser experiment (that is the main benchmark driver).
+ * Even with one engine twice, AST node counts need not match: serialization
+ * can change shape (e.g. let removal, canonical printing), so comparing
+ * nodes1 vs nodes2 is still meaningful.
+ *
+ * Heavy work runs in a child process; parent enforces wall-clock timeout.
  * Prints one JSON object on stdout.
  */
 #include "somtparser/parser.h"

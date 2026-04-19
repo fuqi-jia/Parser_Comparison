@@ -7,6 +7,7 @@ import argparse
 import csv
 import json
 import os
+import experiment_presets as ep
 import resource
 import statistics
 import subprocess
@@ -196,42 +197,27 @@ def rebuild_table(rows, out):
 def write_parse_vs_solve_summary(table_path, summary_path):
     """Markdown rollup for Z3 parse-vs-solve (same folder as CSV)."""
     summary_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        rel = table_path.resolve().relative_to(REPO_ROOT.resolve())
-    except ValueError:
-        rel = table_path.name
     lines = [
-        "# Z3 parse vs solve (standalone)",
+        "## Z3 parse vs solver wall time (standalone)",
         "",
-        "Two timed passes per instance in one process: empty-assertions `check-sat` (parse path) vs full `check-sat` (includes solving). Columns `parse_ms` / `solve_ms` are wall-clock milliseconds from the instrumented binary.",
-        "",
-        "Primary CSV: `{}`.".format(rel),
+        "Per instance: empty-assertions `check-sat` (parse path) vs full `check-sat` (includes solving); `parse_ms` / `solve_ms` are wall-clock milliseconds in one Z3 process.",
         "",
     ]
     if not table_path.is_file():
-        lines.extend(
-            [
-                "_No table yet._ Build `external/z3/z3_parse_vs_solve`, then run:",
-                "",
-                "```bash",
-                "./parser_comparison.sh parse-vs-solve --file-list results/file_list.txt --timeout 30 --memory-mb 4096 -j 32",
-                "```",
-                "",
-            ]
-        )
+        lines.append("_No aggregate results yet._")
         summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return
 
     with open(table_path, "r", encoding="utf-8", newline="") as f:
         rows = list(csv.DictReader(f))
     if not rows:
-        lines.append("_Table has no data rows yet._")
+        lines.append("_No aggregate results yet._")
         summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return
 
     n = len(rows)
     st_counts = Counter((r.get("status") or "").strip().lower() or "unknown" for r in rows)
-    lines.append("## Overall (by `status`)")
+    lines.append("### Overall (by outcome)")
     lines.append("")
     lines.append("| Status | Count | Share |")
     lines.append("| --- | ---: | ---: |")
@@ -264,7 +250,7 @@ def write_parse_vs_solve_summary(table_path, summary_path):
             except ValueError:
                 pass
 
-    lines.append("## Timing (rows with `status=ok` only)")
+    lines.append("### Timing (`status=ok` only)")
     lines.append("")
     lines.append("| Metric | Value |")
     lines.append("| --- | ---: |")
@@ -290,9 +276,6 @@ def write_parse_vs_solve_summary(table_path, summary_path):
     else:
         lines.append("| Median `parse_over_solve` (finite) | — |")
     lines.append("")
-    lines.append(
-        "_Regenerate this file by re-running the benchmark; refresh README with `./parser_comparison.sh readme --readme README.md`._"
-    )
     summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -302,21 +285,48 @@ def main():
     ap.add_argument(
         "--solve-timeout-ms",
         type=int,
-        default=600000,
-        help="Z3 solver timeout parameter (milliseconds)",
+        default=None,
+        help="Z3 solver timeout parameter (milliseconds); default 600000, or from --preset",
     )
     ap.add_argument(
         "--wall-timeout",
         type=int,
-        default=120,
-        help="Outer subprocess wall-clock timeout (seconds)",
+        default=None,
+        help="Outer subprocess wall-clock timeout (seconds); default 120, or from --preset",
     )
-    ap.add_argument("--memory-mb", type=int, default=4096)
-    ap.add_argument("--jobs", "-j", type=int, default=8)
+    ap.add_argument(
+        "--memory-mb",
+        type=int,
+        default=None,
+        help="RLIMIT_AS cap per child (MiB); default 4096, or from --preset",
+    )
+    ap.add_argument(
+        "--jobs",
+        "-j",
+        type=int,
+        default=None,
+        help="Parallel workers; default 8, or from --preset",
+    )
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--checkpoint", type=Path, default=CHECKPOINT)
     ap.add_argument("--table", type=Path, default=TABLE)
+    ep.add_preset_arguments(ap)
     args = ap.parse_args()
+    ep.require_known_preset(args.preset)
+    args.solve_timeout_ms = ep.pick(args.preset, "solve_timeout_ms", args.solve_timeout_ms, 600000)
+    args.wall_timeout = ep.pick(args.preset, "wall_timeout", args.wall_timeout, 120)
+    args.memory_mb = ep.pick(args.preset, "memory_mb", args.memory_mb, 4096)
+    args.jobs = ep.pick(args.preset, "jobs", args.jobs, 8)
+    if args.preset:
+        print(
+            "preset {}: solve_timeout_ms={} wall_timeout={}s memory_mb={} jobs={}".format(
+                args.preset,
+                args.solve_timeout_ms,
+                args.wall_timeout,
+                args.memory_mb,
+                args.jobs,
+            )
+        )
 
     fl = (REPO_ROOT / args.file_list).resolve() if not args.file_list.is_absolute() else args.file_list.resolve()
     files = load_file_list(fl)

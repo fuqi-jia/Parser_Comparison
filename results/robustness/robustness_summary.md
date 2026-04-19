@@ -1,8 +1,8 @@
-# Native (SMTParser) robustness summary
+## Native parser robustness by theory (SMTParser)
 
-Source: rows with `parser=native` in `parser_benchmark_table.csv`; grouped by theory directory name (e.g. `QF_BV`) in the benchmark path.
+Per-theory counts of native front-end outcomes (`ok`, `timeout`, `fail`, `other`) on the evaluated instances.
 
-## Overall totals
+### Overall totals
 
 | Metric | Count | Share |
 | --- | ---: | ---: |
@@ -11,7 +11,7 @@ Source: rows with `parser=native` in `parser_benchmark_table.csv`; grouped by th
 | fail | 0 | 0.0000% |
 | other | 0 | 0.0000% |
 
-## By theory family
+### By theory family
 
 | Theory | ok | timeout | fail | other | total | fail%+timeout% |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -23,3 +23,4 @@ Source: rows with `parser=native` in `parser_benchmark_table.csv`; grouped by th
 | QF_NIA | 25452 | 0 | 0 | 0 | 25452 | 0.0000% |
 | QF_NRA | 12151 | 3 | 0 | 0 | 12154 | 0.0247% |
 | QF_S | 22172 | 0 | 0 | 0 | 22172 | 0.0000% |
+

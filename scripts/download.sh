@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # 一键安装：external 下各 parser 所需依赖/源码下载 + SMT-LIB benchmark 下载与解压
+# 新克隆仓库请优先: ./parser_comparison.sh prepare（会先 submodule init 再调用本脚本）
 # 用法: ./scripts/download.sh [--parsers-only] [--benchmark-only] [--theories QF_LIA,...] [--all-theories] [--jobs N]
 # 下载来源:
 #   cvc5:       https://github.com/cvc5/cvc5 (Releases 源码)
