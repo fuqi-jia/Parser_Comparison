@@ -187,3 +187,5 @@ benchmark/*
 results/*
 !results/summary/*
 !results/frontend_scatter/*
+
+.memory

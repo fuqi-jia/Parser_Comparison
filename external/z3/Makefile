@@ -32,14 +32,19 @@ endif
 
 TARGET = z3_parser
 SOURCE = z3_parser.cpp
+TARGET2 = z3_parse_vs_solve
+SOURCE2 = z3_parse_vs_solve.cpp
 
-all: $(TARGET)
+all: $(TARGET) $(TARGET2)
 
 $(TARGET): $(SOURCE)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $(TARGET) $(SOURCE) $(LDFLAGS) $(Z3_LIBS)
 
+$(TARGET2): $(SOURCE2)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) -o $(TARGET2) $(SOURCE2) $(LDFLAGS) $(Z3_LIBS)
+
 clean:
-	rm -f $(TARGET) *.o
+	rm -f $(TARGET) $(TARGET2) *.o
 
 test: $(TARGET)
 	@if [ -f test.smt2 ]; then ./$(TARGET) test.smt2; else echo "No test.smt2"; fi
@@ -53,7 +58,7 @@ check-deps:
 
 help:
 	@echo "Z3 Parser: 预编译 z3-*-x64-* 或源码 z3-z3-*"
-	@echo "  make [all]  - 编译 z3_parser"
+	@echo "  make [all]  - 编译 z3_parser 与 z3_parse_vs_solve"
 	@echo "  make test   - 运行 test.smt2"
 	@echo "  make check-deps - 检查 Z3 路径"
 

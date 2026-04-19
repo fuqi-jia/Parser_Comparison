@@ -57,4 +57,18 @@ add_custom_command(
         $<TARGET_FILE:smt_parser_wrapper> 
         ${CMAKE_BINARY_DIR}/smt_parser_wrapper
     COMMENT "Copying smt_parser_wrapper to build directory root"
-) 
+)
+
+add_executable(roundtrip_tool roundtrip_tool.cpp)
+target_link_libraries(roundtrip_tool PUBLIC somtparser_static)
+if(UNIX AND NOT APPLE)
+    target_link_libraries(roundtrip_tool PUBLIC stdc++fs)
+endif()
+target_link_libraries(roundtrip_tool PUBLIC Threads::Threads)
+add_custom_command(
+    TARGET roundtrip_tool POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+        $<TARGET_FILE:roundtrip_tool>
+        ${CMAKE_BINARY_DIR}/roundtrip_tool
+    COMMENT "Copying roundtrip_tool to build directory root"
+)

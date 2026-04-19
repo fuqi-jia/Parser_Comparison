@@ -95,14 +95,14 @@ def write_table_csv(rows, path):
         w = csv.DictWriter(f, fieldnames=fieldnames)
         w.writeheader()
         w.writerows(rows)
-    print("已写入:", path)
+    print("wrote:", path)
 
 
 def write_table_md(rows, path):
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        f.write("| Parser | 中位时间(ms) | 平均内存(kB) | 平均节点数 | 超时(%) | 非超时失败(%) | 成功率(%) |\n")
-        f.write("|--------|-------------|--------------|------------|---------|----------------|----------|\n")
+        f.write("| Parser | Median time (ms) | Mean memory (kB) | Mean AST nodes | Timeout (%) | Fail (non-timeout) (%) | Success (%) |\n")
+        f.write("|--------|-----------------|------------------|----------------|-------------|------------------------|---------------|\n")
         for r in rows:
             avg_t = r["median_time_ms"] if r["median_time_ms"] != "" else "-"
             avg_m = r["avg_memory_kb"] if r["avg_memory_kb"] != "" else "-"
@@ -111,40 +111,40 @@ def write_table_md(rows, path):
                 f"| {r['parser']} | {avg_t} | {avg_m} | {avg_n} | "
                 f"{r['timeout_pct']} | {r['fail_pct']} | {r['support_pct']} |\n"
             )
-    print("已写入:", path)
+    print("wrote:", path)
 
 
 def main():
     ap = argparse.ArgumentParser(
-        description="从 sampled 长表按理论生成汇总表：每理论一表（平均时间、内存、节点数、超时%、非超时失败%）"
+        description="Per-theory summary from long benchmark CSV (median time, memory, nodes, timeout%, fail%)."
     )
     ap.add_argument(
         "--input",
         type=Path,
         default=DEFAULT_INPUT,
-        help="长表 CSV 路径（file, parser, status, time_ms, memory_kb, ast_nodes）",
+        help="Long-table CSV (file, parser, status, time_ms, memory_kb, ast_nodes)",
     )
     ap.add_argument(
         "--output-dir",
         type=Path,
         default=DEFAULT_OUTPUT_DIR,
-        help="输出目录，每理论生成 parser_summary_sampled_<理论>.csv 与 .md",
+        help="Output directory: parser_summary_sampled_<theory>.csv and .md per theory",
     )
     ap.add_argument(
         "--no-md",
         action="store_true",
-        help="不生成 Markdown 文件，仅生成 CSV",
+        help="CSV only, skip Markdown",
     )
     ap.add_argument(
         "--update-from-recheck",
         type=Path,
         default=None,
-        help="重跑结果 CSV（与 checkpoint 同构）：用其中 (file, parser) 覆盖 input 长表对应行后再生成 summary，用于纠正误判",
+        help="Recheck CSV (same schema as checkpoint): overwrite matching (file, parser) rows before summary",
     )
     args = ap.parse_args()
 
     if not args.input.exists():
-        print("错误: 输入文件不存在:", args.input, file=__import__("sys").stderr)
+        print("error: input file not found:", args.input, file=__import__("sys").stderr)
         raise SystemExit(1)
 
     # 读取长表
@@ -166,7 +166,7 @@ def main():
             if key in recheck_dict:
                 input_rows[i] = recheck_dict[key]
                 replaced += 1
-        print("已用重跑结果覆盖 {} 条记录（来自 {}）".format(replaced, args.update_from_recheck))
+        print("merged {} rows from recheck {}".format(replaced, args.update_from_recheck))
 
     # 按 (理论, parser) 分组：by_theory[theory][parser] = { ok, timeout, fail }
     by_theory = {}

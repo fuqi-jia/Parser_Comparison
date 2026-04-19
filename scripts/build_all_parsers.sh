@@ -103,7 +103,7 @@ build_cvc5() {
     fi
 }
 
-# z3: z3_parser (Makefile)
+# z3: Makefile 生成 z3_parser（parse-only JSON）与 z3_parse_vs_solve（parse+check 计时）
 build_z3() {
     run_build "z3" "z3" make -j"$NPROC"
 }
