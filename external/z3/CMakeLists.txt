@@ -60,4 +60,10 @@ target_link_directories(z3_parser PRIVATE ${Z3_LIB})
 target_link_libraries(z3_parser PRIVATE z3)
 target_compile_options(z3_parser PRIVATE -O2 -Wall)
 
-install(TARGETS z3_parser RUNTIME DESTINATION bin)
+add_executable(z3_parse_vs_solve z3_parse_vs_solve.cpp)
+target_include_directories(z3_parse_vs_solve PRIVATE ${Z3_INCLUDE})
+target_link_directories(z3_parse_vs_solve PRIVATE ${Z3_LIB})
+target_link_libraries(z3_parse_vs_solve PRIVATE z3)
+target_compile_options(z3_parse_vs_solve PRIVATE -O2 -Wall)
+
+install(TARGETS z3_parser z3_parse_vs_solve RUNTIME DESTINATION bin)
