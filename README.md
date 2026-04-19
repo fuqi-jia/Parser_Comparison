@@ -1,6 +1,6 @@
 # Parser_Comparison
 
-Parse-only comparison of SMT-LIB front ends on SMT-COMP 2025 non-incremental benchmarks. **SMTParser** is recorded as parser name **`native`**.
+Parse-only comparison of SMT-LIB front ends on SMT-COMP 2025 non-incremental benchmarks. **SOMTParser** is the front end under test; in benchmark CSVs it appears as parser name **`native`**.
 
 ---
 
@@ -25,9 +25,10 @@ chmod +x ./parser_comparison.sh    # once, if your clone is not executable
 | `plots` | `scripts/gen_all_tables_and_plots.sh` | Per-theory summaries, `results/summary/frontend_table.tex`, scatter PNGs under `results/frontend_scatter/` |
 | `readme` | `scripts/gen_readme_tables.py` | Paper tables from `frontend_table.tex` + splice standalone summaries; add `--readme README.md` |
 | `presets` / `preset-list` | `scripts/experiment_presets.py` | List named `--preset` bundles (`sat2026`, …) |
-| `roundtrip` | `scripts/run_roundtrip_benchmark.py` | **Same-engine** round-trip: native parse → `dumpSMT2` → native reparse (differs from cross-parser `benchmark`); `results/roundtrip/`; optional `--preset sat2026` |
-| `robustness` | `scripts/summarize_robustness.py` | Native `ok`/`timeout`/`fail` by theory; `results/robustness/robustness_summary.md`; merges `roundtrip_table.csv` if present |
+| `roundtrip` | `scripts/run_roundtrip_benchmark.py` | **Same-engine** round-trip: SOMTParser (`native`) parse → `dumpSMT2` → reparse (differs from cross-parser `benchmark`); `results/roundtrip/`; optional `--preset sat2026` |
+| `robustness` | `scripts/summarize_robustness.py` | SOMTParser (`native`) `ok`/`timeout`/`fail` by theory; `results/robustness/robustness_summary.md`; merges `roundtrip_table.csv` if present |
 | `parse-vs-solve` | `scripts/run_parse_vs_solve_benchmark.py` | Z3 parse vs `check_sat` wall clock; `results/parse_vs_solve/` (`*.csv`, `parse_vs_solve_summary.md`); optional `--preset sat2026` |
+| `dual-path` | `scripts/run_native_z3_dual_path_benchmark.py` | **SOMTParser + Z3:** Z3 on original vs SOMTParser `dumpSMT2` then Z3 on dump; `verdict_disagree` only on sat↔unsat; `results/native_z3_dual_path/`; needs `build/native_z3_dual_path` + Z3 |
 | `sampled` | `scripts/run_sampled_full.sh` | Sampled pipeline (`--fresh`, `--skip-sample`, …) |
 | `build` | `scripts/build_all.sh` | **Full** build: `build-internal` then `build-external` (extra args → native `cmake --build` only) |
 | `build-internal` | `scripts/build_native.sh` | CMake configure + build for `smt_parser_comparison`, `roundtrip_tool`, … (default `build/`; `BUILD_DIR`; extra args → `cmake --build`) |
@@ -43,7 +44,7 @@ Everything after the command name is passed through unchanged (`argparse` flags,
 
 ### Common experiment settings (time, memory, parallelism)
 
-The same **logical** limits apply across all heavy runs in this repo (multi-parser compare, round-trip, Z3 parse-vs-solve, sampled pipelines, recheck scripts): how long each instance may run, how much address space a child may use, and how many workers run in parallel. Those are **not** tied to a single command — each driver just exposes them under its own CLI names (see `--help` per tool).
+The same **logical** limits apply across all heavy runs in this repo (multi-parser compare, round-trip, Z3 parse-vs-solve, `dual-path`, sampled pipelines, recheck scripts): how long each instance may run, how much address space a child may use, and how many workers run in parallel. Those are **not** tied to a single command — each driver just exposes them under its own CLI names (see `--help` per tool).
 
 | Dimension | Meaning | Typical CLI flags |
 | --- | --- | --- |
@@ -57,11 +58,11 @@ The same **logical** limits apply across all heavy runs in this repo (multi-pars
 | --- | --- | --- |
 | `./parser_comparison.sh benchmark` | `--timeout`, `--memory-mb`, `-j` | **10** s, **4096** MiB, **24** |
 | `./parser_comparison.sh roundtrip` | `--timeout`, `--memory-mb`, `-j` | **30** s, **4096** MiB, **24** |
-| `./parser_comparison.sh parse-vs-solve` | `--solve-timeout-ms`, `--wall-timeout`, `--memory-mb`, `-j` | **600000**, **120** s, **4096** MiB, **8** |
+| `./parser_comparison.sh parse-vs-solve` | `--solve-timeout-ms`, `--wall-timeout`, `--memory-mb`, `-j` | **600000**, **720** s (outer subprocess; must be ≥ solve budget), **4096** MiB, **8** |
 | `python3 scripts/re_run_parser_benchmark.py` | `--timeout`, `--memory-mb` (see `--help`) | **10** s, **4096** MiB |
 | `./parser_comparison.sh sampled` | Benchmark / recheck invoke Python drivers with flags in [`scripts/run_sampled_full.sh`](scripts/run_sampled_full.sh) (e.g. `--timeout 10 --memory-mb 4096`; no `-j` → benchmark default **24**) | align that script with the same budgets you use elsewhere |
 
-**Named bundles:** `--preset` / `--param` (e.g. `sat2026`) on supported drivers loads a shared bundle from [`scripts/experiment_presets.py`](scripts/experiment_presets.py); run `./parser_comparison.sh presets` to list names. Explicit flags always **override** the preset. Post-processing only (`plots`, `readme`, `robustness`, `summary`, …) does not consume these resource flags.
+**Named bundles:** `--preset` / `--param` (e.g. `sat2026`) on supported drivers loads a bundle from [`scripts/experiment_presets.py`](scripts/experiment_presets.py); run `./parser_comparison.sh presets` to list names. Explicit flags always **override** the preset. For **`sat2026`**: `timeout` / `memory_mb` / `jobs` apply to **`benchmark`** and **`roundtrip`**; **`parse-vs-solve`** uses the same `memory_mb` and `jobs` but **not** the 30 s parse-instance cap—its time limits are `solve_timeout_ms` (inside Z3) and `wall_timeout` (Python wrapper around the whole child). **`dual-path`** uses `memory_mb`, `jobs`, `solve_timeout_ms`, and `dual_path_outer_sec` (subprocess wall for two Z3 `check` calls plus native dump). **`robustness`** only aggregates CSVs and has no `--preset` (use a benchmark table produced with the preset you care about).
 
 ### Typical workflow
 
@@ -73,7 +74,7 @@ The same **logical** limits apply across all heavy runs in this repo (multi-pars
 4. **Tables and figures:** `./parser_comparison.sh plots`  
 5. **Refresh the results section of this README:** `./parser_comparison.sh readme --readme README.md` (paper tables + standalone experiment blocks).
 
-**Paper-style full-artifact run:** use `--preset sat2026` on `benchmark`, `roundtrip`, and `parse-vs-solve` (values in `experiment_presets.py`). Other environment notes: Ubuntu-class OS, `-O3`, single-threaded *per parser invocation* inside the driver unless you change build flags.
+**Paper-style full-artifact run:** use `--preset sat2026` on `benchmark`, `roundtrip`, `parse-vs-solve`, and `dual-path`. Other environment notes: Ubuntu-class OS, `-O3`, single-threaded *per parser invocation* inside the driver unless you change build flags.
 
 ### More documentation
 
@@ -81,20 +82,20 @@ The same **logical** limits apply across all heavy runs in this repo (multi-pars
 - Recheck / merge behaviour: [docs/recheck_and_native.md](docs/recheck_and_native.md)  
 - Parser layout and dependencies: [external/PARSER_FEATURES.md](external/PARSER_FEATURES.md)  
 - Per-parser build notes: `external/cvc5/README.md`, `external/smt-switch/README.md`, `external/antlr4_parser/README.md`, `external/jsmtlib/BUILD_INSTRUCTIONS.md`  
-- SMTParser library (submodule): [SOMTParser/README.md](SOMTParser/README.md)
+- SOMTParser library (submodule): [SOMTParser/README.md](SOMTParser/README.md)
 
 ---
 
 ## 2. Experimental results
 
-Tables below are generated from [`results/summary/frontend_table.tex`](results/summary/frontend_table.tex) (coverage + appendix scatter numbers). The **standalone experiment** subsection further down is filled from `results/{roundtrip,robustness,parse_vs_solve}/*_summary.md`. **Regenerate after changing LaTeX or re-running those benchmarks:**
+Tables below are generated from [`results/summary/frontend_table.tex`](results/summary/frontend_table.tex) (coverage + appendix scatter numbers). The **standalone experiment** subsection further down is filled from `results/{roundtrip,robustness,parse_vs_solve,native_z3_dual_path}/*_summary.md`. **Regenerate after changing LaTeX or re-running those benchmarks:**
 
 ```bash
 ./parser_comparison.sh readme
 ./parser_comparison.sh readme --readme README.md
 ```
 
-Long-form commentary and extra statistics: [results/summary/experimental_evaluation_data_summary.md](results/summary/experimental_evaluation_data_summary.md). Standalone copy of the paper tables: [results/summary/readme_paper_tables.md](results/summary/readme_paper_tables.md). Concatenated standalone experiment write-ups (same sources spliced into this README): [results/summary/readme_standalone_experiments.md](results/summary/readme_standalone_experiments.md). Per-experiment folders: [results/roundtrip/roundtrip_summary.md](results/roundtrip/roundtrip_summary.md), [results/robustness/robustness_summary.md](results/robustness/robustness_summary.md), [results/parse_vs_solve/parse_vs_solve_summary.md](results/parse_vs_solve/parse_vs_solve_summary.md).
+Long-form commentary and extra statistics: [results/summary/experimental_evaluation_data_summary.md](results/summary/experimental_evaluation_data_summary.md). Standalone copy of the paper tables: [results/summary/readme_paper_tables.md](results/summary/readme_paper_tables.md). Concatenated standalone experiment write-ups (same sources spliced into this README): [results/summary/readme_standalone_experiments.md](results/summary/readme_standalone_experiments.md). Per-experiment folders: [results/roundtrip/roundtrip_summary.md](results/roundtrip/roundtrip_summary.md), [results/robustness/robustness_summary.md](results/robustness/robustness_summary.md), [results/parse_vs_solve/parse_vs_solve_summary.md](results/parse_vs_solve/parse_vs_solve_summary.md), [results/native_z3_dual_path/native_z3_dual_path_summary.md](results/native_z3_dual_path/native_z3_dual_path_summary.md).
 
 Scatter PNGs (not embedded here): run `./parser_comparison.sh plots` → `results/frontend_scatter/{time,rss,nodes}/`.
 
@@ -106,7 +107,7 @@ Success rate $\%= 100 - \mathrm{timeout} - \mathrm{failure}$; timeout rate follo
 
 ### Success rate (%)
 
-| Theory | Z3 | cvc5 | smt-sw | pysmt | ANTLR4 | jSMTLIB | SMTParser |
+| Theory | Z3 | cvc5 | smt-sw | pysmt | ANTLR4 | jSMTLIB | SOMTParser |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | QF_AX | **100** | *97.28* | - | **100** | **100** | **100** | **100** |
 | QF_BV | 98.87 | 82.54 | 83.14 | 99.31 | 94.22 | **99.84** | *99.78* |
@@ -119,7 +120,7 @@ Success rate $\%= 100 - \mathrm{timeout} - \mathrm{failure}$; timeout rate follo
 
 ### Timeout rate (%)
 
-| Theory | Z3 | cvc5 | smt-sw | pysmt | ANTLR4 | jSMTLIB | SMTParser |
+| Theory | Z3 | cvc5 | smt-sw | pysmt | ANTLR4 | jSMTLIB | SOMTParser |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | QF_AX | **0** | *2.72* | - | **0** | **0** | **0** | **0** |
 | QF_BV | 1.13 | 17.46 | 16.81 | 0.58 | **0.15** | *0.16* | 0.22 |
@@ -132,7 +133,7 @@ Success rate $\%= 100 - \mathrm{timeout} - \mathrm{failure}$; timeout rate follo
 
 ### Fail rate (%)
 
-| Theory | Z3 | cvc5 | smt-sw | pysmt | ANTLR4 | jSMTLIB | SMTParser |
+| Theory | Z3 | cvc5 | smt-sw | pysmt | ANTLR4 | jSMTLIB | SOMTParser |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | QF_AX | **0** | **0** | - | **0** | **0** | **0** | **0** |
 | QF_BV | **0** | **0** | *0.05* | 0.11 | 5.62 | **0** | **0** |
@@ -145,7 +146,7 @@ Success rate $\%= 100 - \mathrm{timeout} - \mathrm{failure}$; timeout rate follo
 
 ### Scatter plots: common-success subset and timeouts
 
-**Note**: Ratios use instances where **both** SMTParser and the baseline are `ok`; timeouts are drawn at the plot boundary.
+**Note**: Ratios use instances where **both** SOMTParser (`native`) and the baseline are `ok`; timeouts are drawn at the plot boundary.
 jSMTLIB RSS reflects JVM process RSS and is not directly comparable to C++ front-end RSS.
 
 #### Timeouts and common-success counts (N)
@@ -159,7 +160,7 @@ jSMTLIB RSS reflects JVM process RSS and is not directly comparable to C++ front
 | ANTLR4 | 6 | 108 | 10 | 158,506 | 158,497 |
 | jSMTLIB | 38 | 105 | 95 | 145,788 | 145,747 |
 
-#### Scatter summary: time / peak RSS / AST nodes (ratio = competitor / SMTParser)
+#### Scatter summary: time / peak RSS / AST nodes (ratio = competitor / SOMTParser)
 
 | Baseline | N | Time mean | Time Better(%) | RSS mean | RSS Better(%) | Nodes mean | Nodes Better(%) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -174,21 +175,21 @@ jSMTLIB RSS reflects JVM process RSS and is not directly comparable to C++ front
 
 ### Standalone experiments (not multi-parser comparison)
 
-Same presentation style as **Front-end coverage** above: section titles plus tables of measured outcomes only. Drivers and refresh workflow are in **§1**. **Round-trip** is deliberately *not* “two different parsers on the same file”: it stress-tests **one** implementation through print–reparse; cross-front-end counts appear in the main benchmark tables.
+Same presentation style as **Front-end coverage** above: section titles plus tables of measured outcomes only. Drivers and refresh workflow are in **§1**. **Round-trip** stress-tests **one** SOMTParser build through print–reparse; **`dual-path`** combines SOMTParser `dumpSMT2` with **two** Z3 `check` runs to compare verdicts; cross-front-end parse-only counts appear in the main benchmark tables.
 
 <!--EXTENDED_RESULTS_BEGIN-->
 
-## Round-trip correctness (SMTParser)
+## Round-trip correctness (SOMTParser)
 
-Two experimental settings are common in front-end work: **(A) same-engine parse → print → reparse** and **(B) cross-parser** runs on one file. This table is **(A) only**: SMTParser reads the original script, emits SMT2 via `dumpSMT2`, then SMTParser parses that dump again (two parser objects, **one** implementation). The intermediate file can change structure, so first-pass and second-pass **node counts are not tautologically equal**—`mismatch` is informative. **(B)** is the multi-parser `benchmark`, which records `ast_nodes` per tool on the same path.
+Two experimental settings are common in front-end work: **(A) same-engine parse → print → reparse** and **(B) cross-parser** runs on one file. This table is **(A) only**: SOMTParser reads the original script, emits SMT2 via `dumpSMT2`, then SOMTParser parses that dump again (two parser objects, **one** implementation). The intermediate file can change structure, so first-pass and second-pass **node counts are not tautologically equal**—`mismatch` is informative. **(B)** is the multi-parser `benchmark`, which records `ast_nodes` per tool on the same path.
 
 _No aggregate results yet._
 
 ---
 
-## Native parser robustness by theory (SMTParser)
+## Native parser robustness by theory (SOMTParser)
 
-Per-theory counts of native front-end outcomes (`ok`, `timeout`, `fail`, `other`) on the evaluated instances.
+Per-theory counts of SOMTParser (`native`) front-end outcomes (`ok`, `timeout`, `fail`, `other`) on the evaluated instances.
 
 ### Overall totals
 
@@ -216,7 +217,15 @@ Per-theory counts of native front-end outcomes (`ok`, `timeout`, `fail`, `other`
 
 ## Z3 parse vs solver wall time (standalone)
 
-Per instance: empty-assertions `check-sat` (parse path) vs full `check-sat` (includes solving); `parse_ms` / `solve_ms` are wall-clock milliseconds in one Z3 process.
+Per instance, one Z3 process loads assertions (`parse_file` / `parse_string`), then a single full `check()`; `parse_ms` / `solve_ms` are wall-clock milliseconds for those two phases (see `external/z3/z3_parse_vs_solve.cpp`).
+
+_No aggregate results yet._
+
+---
+
+## SOMTParser `dumpSMT2` vs Z3 verdict agreement (standalone)
+
+**`dual-path` driver:** Path **A** — Z3 parses the **original** SMT2 and runs `check()`. Path **B** — SOMTParser parses the same file, writes `dumpSMT2` to a temp file, then Z3 parses that dump and runs `check()`. The CSV records `path_a_verdict` / `path_b_verdict` (`sat` / `unsat` / `unknown`) and an `info` string (e.g. `path_a=sat;path_b=unsat;sat_unsat_mismatch=1`). **`verdict_disagree`** is set only for **(sat, unsat)** or **(unsat, sat)**; `unknown` on either side does **not** count as a mismatch. Timings: `path_a_parse_ms`, `path_a_solve_ms`, `native_dump_ms`, `path_b_parse_ms`, `path_b_solve_ms`. Run: `./parser_comparison.sh dual-path --file-list results/file_list.txt --preset sat2026` (requires `build/native_z3_dual_path` and libZ3).
 
 _No aggregate results yet._
 

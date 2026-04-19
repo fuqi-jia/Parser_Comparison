@@ -44,7 +44,7 @@ usage() {
           Same as: python3 scripts/experiment_presets.py list
 
       roundtrip
-          Same-engine round-trip: SMTParser → dumpSMT2 → SMTParser reparse (not cross-parser).
+          Same-engine round-trip: SOMTParser → dumpSMT2 → SOMTParser reparse (not cross-parser).
           Writes results/roundtrip/roundtrip_table.csv and roundtrip_summary.md.
           Same as: python3 scripts/run_roundtrip_benchmark.py ...
           Example:
@@ -63,6 +63,13 @@ usage() {
           Same as: python3 scripts/run_parse_vs_solve_benchmark.py ...
           Example:
             ./parser_comparison.sh parse-vs-solve --file-list results/file_list.txt -j 8
+
+      dual-path | native-z3-dual-path
+          SOMTParser dumpSMT2 + Z3 on original vs on dump; compare sat/unsat (unknown ignored for mismatch).
+          Writes results/native_z3_dual_path/*.csv and native_z3_dual_path_summary.md.
+          Needs native_z3_dual_path (build-internal with Z3). Same as: python3 scripts/run_native_z3_dual_path_benchmark.py ...
+          Example:
+            ./parser_comparison.sh dual-path --file-list results/file_list.txt --preset sat2026
 
       sampled
           One-shot sampled pipeline (sample → bench → recheck → summary → LaTeX).
@@ -166,6 +173,9 @@ case "${CMD}" in
         ;;
     parse-vs-solve|parse_vs_solve|z3-parse-solve)
         exec python3 "${SCRIPTS}/run_parse_vs_solve_benchmark.py" "$@"
+        ;;
+    dual-path|dual_path|native-z3-dual-path|native_z3_dual_path)
+        exec python3 "${SCRIPTS}/run_native_z3_dual_path_benchmark.py" "$@"
         ;;
     sampled)
         exec bash "${SCRIPTS}/run_sampled_full.sh" "$@"

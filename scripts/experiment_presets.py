@@ -7,7 +7,8 @@ used across compare / round-trip / parse-vs-solve drivers — see README §1.
 
 Usage: pass ``--preset NAME`` (alias ``--param NAME``) on any script that registers
 the preset hook (currently ``run_parser_benchmark.py``, ``run_roundtrip_benchmark.py``,
-``run_parse_vs_solve_benchmark.py``). Explicit CLI flags always win over preset values.
+``run_parse_vs_solve_benchmark.py``, ``run_native_z3_dual_path_benchmark.py``).
+Explicit CLI flags always win over preset values.
 """
 from __future__ import print_function
 
@@ -18,17 +19,22 @@ import sys
 PRESETS = {
     "sat2026": {
         "_doc": (
-            "Paper-style full-artifact settings used in this repo’s README examples: "
-            "30 s per-instance parse cap, 4 GiB RLIMIT_AS, 32 parallel workers; "
-            "Z3 parse-vs-solve keeps a 600 s solver budget and 120 s outer wall clock."
+            "Paper-style settings: 30 s per-instance parse cap, 4 GiB RLIMIT_AS, 32 workers "
+            "for multi-parser benchmark + same-engine roundtrip (see run_parser_benchmark / "
+            "run_roundtrip_benchmark). Z3 parse-vs-solve does NOT use that 30 s parse cap; it "
+            "uses memory_mb + jobs from here, solve_timeout_ms inside Z3, and wall_timeout as "
+            "the outer subprocess cap (must exceed solve budget; 720 s default for 600 s solve). "
+            "dual_path_outer_sec caps the whole native_z3_dual_path child (two Z3 checks + dump)."
         ),
         # Shared across multi-parser benchmark + roundtrip (parse / roundtrip_tool)
         "timeout": 30,
         "memory_mb": 4096,
         "jobs": 32,
-        # parse_vs_solve only (ignored by other scripts)
+        # parse_vs_solve only (ignored by benchmark / roundtrip). Outer wall must allow solve.
         "solve_timeout_ms": 600000,
-        "wall_timeout": 120,
+        "wall_timeout": 720,
+        # native_z3_dual_path: subprocess wall (two solver.check + native dump; default >= 2× solve)
+        "dual_path_outer_sec": 1500,
     },
 }
 

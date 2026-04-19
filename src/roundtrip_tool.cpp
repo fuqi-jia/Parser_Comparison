@@ -1,5 +1,5 @@
 /**
- * Single-engine round-trip for SMTParser (SOMTParser): parse original SMT2,
+ * Single-engine round-trip for SOMTParser: parse original SMT2,
  * dump linear SMT2 via dumpSMT2(), then parse the dump again with a second
  * Parser instance of the *same* implementation.
  *

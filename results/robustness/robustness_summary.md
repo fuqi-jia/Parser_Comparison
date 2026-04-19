@@ -1,6 +1,6 @@
-## Native parser robustness by theory (SMTParser)
+## Native parser robustness by theory (SOMTParser)
 
-Per-theory counts of native front-end outcomes (`ok`, `timeout`, `fail`, `other`) on the evaluated instances.
+Per-theory counts of SOMTParser (`native`) front-end outcomes (`ok`, `timeout`, `fail`, `other`) on the evaluated instances.
 
 ### Overall totals
 

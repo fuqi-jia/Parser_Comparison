@@ -1,4 +1,4 @@
-// Z3: wall-clock parse (load assertions) vs check_sat(), same process.
+// Z3: wall-clock for parse_file/parse_string+add vs one full solver.check(), same process.
 // Usage: z3_parse_vs_solve <file.smt2> [solve_timeout_ms]
 // JSON on stdout; exit 0 iff parse succeeded and check completed (sat/unsat/unknown).
 

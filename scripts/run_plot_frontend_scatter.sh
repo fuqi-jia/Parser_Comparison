@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 一键生成 SMTParser vs 各 parser 的两两对比散点图（time / rss / nodes，共 18 张）
+# 一键生成 SOMTParser vs 各 parser 的两两对比散点图（time / rss / nodes，共 18 张）
 # 从项目根运行。输出目录默认 results/frontend_scatter，下含 time/ rss/ nodes/。
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

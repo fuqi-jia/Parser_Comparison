@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Compare SMTParser (native) vs competitors on instance-level data.
+Compare SOMTParser (`native`) vs competitors on instance-level data.
 Metrics: time_ms, memory_mb, ast_nodes.
 Competitors: Z3, cvc5, smt_switch, pysmt, antlr4, jsmtlib.
 No aggregation by theory.
@@ -12,7 +12,7 @@ import math
 import sys
 from pathlib import Path
 
-# SMTParser is "native" in the benchmark CSV
+# SOMTParser is recorded as parser id "native" in the benchmark CSV
 SMTPARSER_NAME = "native"
 
 # CSV parser name -> display name
@@ -110,7 +110,7 @@ def compute_for_metric(
         # Lower is better for all three metrics
         if v_n < v_c:
             better += 1
-        # Ratios: competitor / SMTParser (only when both > 0 for ratio)
+        # Ratios: competitor / SOMTParser (only when both > 0 for ratio)
         if v_n > 0 and v_c >= 0:
             ratio = v_c / v_n
             ratios.append(ratio)
@@ -141,7 +141,7 @@ def compute_for_metric(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Compare SMTParser vs competitors (instance-level).")
+    parser = argparse.ArgumentParser(description="Compare SOMTParser vs competitors (instance-level).")
     parser.add_argument(
         "csv",
         nargs="?",

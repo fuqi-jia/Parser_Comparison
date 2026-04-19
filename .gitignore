@@ -207,5 +207,7 @@ results/*
 !results/robustness/*.md
 !results/parse_vs_solve/
 !results/parse_vs_solve/*.md
+!results/native_z3_dual_path/
+!results/native_z3_dual_path/*.md
 
 .memory

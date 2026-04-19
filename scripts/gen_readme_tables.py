@@ -21,6 +21,7 @@ STANDALONE_SUMMARY_FILES = (
     "results/roundtrip/roundtrip_summary.md",
     "results/robustness/robustness_summary.md",
     "results/parse_vs_solve/parse_vs_solve_summary.md",
+    "results/native_z3_dual_path/native_z3_dual_path_summary.md",
 )
 
 
@@ -75,7 +76,7 @@ def scatter_appendix_md():
     lines = [
         "### Scatter plots: common-success subset and timeouts",
         "",
-        "**Note**: Ratios use instances where **both** SMTParser and the baseline are `ok`; timeouts are drawn at the plot boundary.",
+        "**Note**: Ratios use instances where **both** SOMTParser (`native`) and the baseline are `ok`; timeouts are drawn at the plot boundary.",
         "jSMTLIB RSS reflects JVM process RSS and is not directly comparable to C++ front-end RSS.",
         "",
         "#### Timeouts and common-success counts (N)",
@@ -89,7 +90,7 @@ def scatter_appendix_md():
         "| ANTLR4 | 6 | 108 | 10 | 158,506 | 158,497 |",
         "| jSMTLIB | 38 | 105 | 95 | 145,788 | 145,747 |",
         "",
-        "#### Scatter summary: time / peak RSS / AST nodes (ratio = competitor / SMTParser)",
+        "#### Scatter summary: time / peak RSS / AST nodes (ratio = competitor / SOMTParser)",
         "",
         "| Baseline | N | Time mean | Time Better(%) | RSS mean | RSS Better(%) | Nodes mean | Nodes Better(%) |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
@@ -121,7 +122,7 @@ def build_markdown(tex_path):
         r"\textbf{Fail Rate",
         r"\bottomrule",
     )
-    headers = ["Theory", "Z3", "cvc5", "smt-sw", "pysmt", "ANTLR4", "jSMTLIB", "SMTParser"]
+    headers = ["Theory", "Z3", "cvc5", "smt-sw", "pysmt", "ANTLR4", "jSMTLIB", "SOMTParser"]
     blocks = [
         "## Front-end coverage (same source as paper Table `tab:frontend-all`)",
         "",

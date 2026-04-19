@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Aggregate native (SMTParser) ok/timeout/fail by theory from parser_benchmark_table.csv; optional round-trip merge."""
+"""Aggregate native (SOMTParser, CSV id `native`) ok/timeout/fail by theory; optional round-trip merge."""
 from __future__ import print_function
 
 import argparse
@@ -103,9 +103,9 @@ def main():
                     rt_total["fail"] += 1
 
     lines = [
-        "## Native parser robustness by theory (SMTParser)",
+        "## Native parser robustness by theory (SOMTParser)",
         "",
-        "Per-theory counts of native front-end outcomes (`ok`, `timeout`, `fail`, `other`) on the evaluated instances.",
+        "Per-theory counts of SOMTParser (`native`) front-end outcomes (`ok`, `timeout`, `fail`, `other`) on the evaluated instances.",
         "",
         "### Overall totals",
         "",

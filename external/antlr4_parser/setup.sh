@@ -18,7 +18,7 @@ NC='\033[0m' # No Color
 # 配置
 # git clone https://github.com/julianthome/smtlibv2-grammar.git
 wget https://github.com/julianthome/smtlibv2-grammar/archive/refs/heads/master.zip
-unzip master.zip
+unzip -o -q master.zip
 mv smtlibv2-grammar-master smtlibv2-grammar
 rm master.zip
 

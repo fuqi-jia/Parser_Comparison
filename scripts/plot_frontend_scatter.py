@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-两两对比散点图：横轴 SMTParser (native)，纵轴另一 parser；每个实例一个点，y=x 参考线。
+两两对比散点图：横轴 SOMTParser (native)，纵轴另一 parser；每个实例一个点，y=x 参考线。
 仅使用两方都 success (status==ok) 的实例。
 生成 time / rss / nodes 三类，每类 6 张图（vs z3, cvc5, smt-switch, pysmt, antlr4, jsmtlib），共 18 张。
 """
@@ -24,9 +24,9 @@ OTHER_DISPLAY = {
 }
 
 METRICS = [
-    ("time_ms", "time", "Median parsing time (ms)", "SMTParser time (ms)", "{} time (ms)"),
-    ("memory_kb", "rss", "Peak RSS (MB)", "SMTParser RSS (MB)", "{} RSS (MB)"),
-    ("ast_nodes", "nodes", "Structural size (nodes)", "SMTParser nodes", "{} nodes"),
+    ("time_ms", "time", "Median parsing time (ms)", "SOMTParser time (ms)", "{} time (ms)"),
+    ("memory_kb", "rss", "Peak RSS (MB)", "SOMTParser RSS (MB)", "{} RSS (MB)"),
+    ("ast_nodes", "nodes", "Structural size (nodes)", "SOMTParser nodes", "{} nodes"),
 ]
 
 
@@ -58,7 +58,7 @@ def _parse_val(raw, metric_key):
 
 
 def get_pairs(rows, metric_key):
-    """按 file 聚合：ok 点 (native_val, other_val)；超时点谁超时谁放边界 (SMTParser 超时->x=MAX, 对方超时->y=MAX)。"""
+    """按 file 聚合：ok 点 (native_val, other_val)；超时点谁超时谁放边界 (SOMTParser 超时->x=MAX, 对方超时->y=MAX)。"""
     by_file = {}
     for r in rows:
         f = (r.get("file") or "").strip()
@@ -169,7 +169,7 @@ def plot_one(ax, data, metric_key, other_parser, xlabel, ylabel, scale_rss=False
 
 def main():
     import argparse
-    ap = argparse.ArgumentParser(description="SMTParser vs 各 parser 两两对比散点图（time / rss / nodes）")
+    ap = argparse.ArgumentParser(description="SOMTParser vs 各 parser 两两对比散点图（time / rss / nodes）")
     ap.add_argument("--table", type=Path, default=DEFAULT_TABLE, help="主表 CSV")
     ap.add_argument("-o", "--output-dir", type=Path, default=DEFAULT_OUT_DIR, help="输出目录，下建 time/ rss/ nodes/")
     ap.add_argument("--no-rss", action="store_true", help="不生成 RSS 图（jSMT 无 RSS 时可跳过）")
@@ -208,7 +208,7 @@ def main():
             fig, ax = plt.subplots(figsize=(4, 4))
             ylabel = ylabel_template.format(OTHER_DISPLAY.get(other, other))
             plot_one(ax, data, metric_key, other, xlabel, ylabel, scale_rss=scale_rss)
-            png = sub / "{}_vs_{}.png".format("SMTParser", other.replace("-", "_"))
+            png = sub / "{}_vs_{}.png".format("SOMTParser", other.replace("-", "_"))
             fig.savefig(png, dpi=150, bbox_inches="tight", pad_inches=0.05)
             plt.close(fig)
             print("已写:", png)

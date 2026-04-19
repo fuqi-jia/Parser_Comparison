@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run SMTParser vs competitor metric comparison (instance-level).
+# Run SOMTParser vs competitor metric comparison (instance-level).
 # Usage: ./scripts/run_compare_metrics.sh [CSV_PATH] [OUTPUT_CSV]
 
 set -euo pipefail

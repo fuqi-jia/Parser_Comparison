@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Same-engine round-trip: SMTParser parse -> dumpSMT2 -> reparse with SMTParser again.
+"""Same-engine round-trip: SOMTParser parse -> dumpSMT2 -> reparse with SOMTParser again.
 
 Cross-parser comparisons (same file, different front ends) live in the main
 benchmark driver; this script only checks serialization consistency within one
@@ -191,9 +191,9 @@ def write_roundtrip_summary(table_path, summary_path):
     """Markdown rollup for this standalone experiment (same folder as CSV)."""
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
-        "## Round-trip correctness (SMTParser)",
+        "## Round-trip correctness (SOMTParser)",
         "",
-        "Two experimental settings are common in front-end work: **(A) same-engine parse → print → reparse** and **(B) cross-parser** runs on one file. This table is **(A) only**: SMTParser reads the original script, emits SMT2 via `dumpSMT2`, then SMTParser parses that dump again (two parser objects, **one** implementation). The intermediate file can change structure, so first-pass and second-pass **node counts are not tautologically equal**—`mismatch` is informative. **(B)** is the multi-parser `benchmark`, which records `ast_nodes` per tool on the same path.",
+        "Two experimental settings are common in front-end work: **(A) same-engine parse → print → reparse** and **(B) cross-parser** runs on one file. This table is **(A) only**: SOMTParser reads the original script, emits SMT2 via `dumpSMT2`, then SOMTParser parses that dump again (two parser objects, **one** implementation). The intermediate file can change structure, so first-pass and second-pass **node counts are not tautologically equal**—`mismatch` is informative. **(B)** is the multi-parser `benchmark`, which records `ast_nodes` per tool on the same path.",
         "",
     ]
     if not table_path.is_file():
@@ -252,7 +252,7 @@ def write_roundtrip_summary(table_path, summary_path):
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Same-engine SMTParser round-trip (parse → dumpSMT2 → reparse); not cross-parser."
+        description="Same-engine SOMTParser round-trip (parse → dumpSMT2 → reparse); not cross-parser."
     )
     ap.add_argument("--file-list", type=Path, required=True)
     ap.add_argument(

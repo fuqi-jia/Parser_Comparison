@@ -11,7 +11,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SUMMARY_DIR = REPO_ROOT / "results" / "summary"
 
-# 表列顺序：Z3, cvc5, smt-sw, pysmt, ANT4, jSMT, SMTParser
+# 表列顺序：Z3, cvc5, smt-sw, pysmt, ANT4, jSMT, SOMTParser
 PARSER_ORDER = ["z3", "cvc5", "smt-switch", "pysmt", "antlr4", "jsmtlib", "native"]
 PARSER_DISPLAY = {
     "z3": "Z3",
@@ -20,7 +20,7 @@ PARSER_DISPLAY = {
     "pysmt": "pysmt",
     "antlr4": "ANT4",
     "jsmtlib": "jSMT",
-    "native": r"\textsc{SMTParser}",
+    "native": r"\textsc{SOMTParser}",
 }
 
 THEORIES = ["QF_AX", "QF_BV", "QF_FP", "QF_LIA", "QF_LRA", "QF_NIA", "QF_NRA", "QF_S"]

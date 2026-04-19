@@ -200,7 +200,11 @@ def write_parse_vs_solve_summary(table_path, summary_path):
     lines = [
         "## Z3 parse vs solver wall time (standalone)",
         "",
-        "Per instance: empty-assertions `check-sat` (parse path) vs full `check-sat` (includes solving); `parse_ms` / `solve_ms` are wall-clock milliseconds in one Z3 process.",
+        "Per instance, **one** Z3 process (`z3_parse_vs_solve`): load the script with `parse_file` / `parse_string`, "
+        "add all assertions to a solver, then run **one** `check()` (full problem). `parse_ms` is wall time for "
+        "parse+load; `solve_ms` is wall time for that single `check()`. This is **not** a two-verdict agreement "
+        "experiment (no cross-check of sat vs unsat); for that you would need a gold label or a second pipeline "
+        "and a separate results table.",
         "",
     ]
     if not table_path.is_file():
@@ -292,7 +296,7 @@ def main():
         "--wall-timeout",
         type=int,
         default=None,
-        help="Outer subprocess wall-clock timeout (seconds); default 120, or from --preset",
+        help="Outer subprocess wall-clock timeout (seconds); default 720, or from --preset (should exceed solve budget)",
     )
     ap.add_argument(
         "--memory-mb",
@@ -314,7 +318,7 @@ def main():
     args = ap.parse_args()
     ep.require_known_preset(args.preset)
     args.solve_timeout_ms = ep.pick(args.preset, "solve_timeout_ms", args.solve_timeout_ms, 600000)
-    args.wall_timeout = ep.pick(args.preset, "wall_timeout", args.wall_timeout, 120)
+    args.wall_timeout = ep.pick(args.preset, "wall_timeout", args.wall_timeout, 720)
     args.memory_mb = ep.pick(args.preset, "memory_mb", args.memory_mb, 4096)
     args.jobs = ep.pick(args.preset, "jobs", args.jobs, 8)
     if args.preset:
