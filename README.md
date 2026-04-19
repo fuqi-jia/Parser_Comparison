@@ -19,10 +19,10 @@ chmod +x ./parser_comparison.sh    # once, if your clone is not executable
 |--------|--------|---------|
 | `benchmark` / `bench` | `scripts/run_parser_benchmark.py` | Multi-parser parse-only run over a file list |
 | `plots` | `scripts/gen_all_tables_and_plots.sh` | Per-theory summaries, `results/summary/frontend_table.tex`, scatter PNGs under `results/frontend_scatter/` |
-| `readme` | `scripts/gen_readme_tables.py` | Markdown tables from `frontend_table.tex`; add `--readme README.md` to splice **section 2** of this file |
-| `roundtrip` | `scripts/run_roundtrip_benchmark.py` | Native parse → `dumpSMT2` → reparse; outputs under `results/roundtrip/` |
-| `robustness` | `scripts/summarize_robustness.py` | Native `ok`/`timeout`/`fail` by theory; merges `roundtrip_table.csv` if present |
-| `parse-vs-solve` | `scripts/run_parse_vs_solve_benchmark.py` | Z3 parse vs `check_sat` wall clock; outputs under `results/parse_vs_solve/` |
+| `readme` | `scripts/gen_readme_tables.py` | Paper tables from `frontend_table.tex` + splice standalone summaries; add `--readme README.md` |
+| `roundtrip` | `scripts/run_roundtrip_benchmark.py` | Native parse → `dumpSMT2` → reparse; `results/roundtrip/` (`*.csv`, `roundtrip_summary.md`) |
+| `robustness` | `scripts/summarize_robustness.py` | Native `ok`/`timeout`/`fail` by theory; `results/robustness/robustness_summary.md`; merges `roundtrip_table.csv` if present |
+| `parse-vs-solve` | `scripts/run_parse_vs_solve_benchmark.py` | Z3 parse vs `check_sat` wall clock; `results/parse_vs_solve/` (`*.csv`, `parse_vs_solve_summary.md`) |
 | `sampled` | `scripts/run_sampled_full.sh` | Sampled pipeline (`--fresh`, `--skip-sample`, …) |
 | `build-parsers` | `scripts/build_all_parsers.sh` | Build drivers under `external/*` (Z3, cvc5, …) |
 | `download` | `scripts/download.sh` | Benchmarks / parser binaries |
@@ -40,7 +40,7 @@ Everything after the command name is passed through unchanged (`argparse` flags,
 4. **Benchmark:** prepare `results/file_list.txt` (one `.smt2` per line), then e.g.  
    `./parser_comparison.sh benchmark --file-list results/file_list.txt --timeout 30 --memory-mb 4096 -j 64`  
 5. **Tables and figures:** `./parser_comparison.sh plots`  
-6. **Refresh the results section of this README:** `./parser_comparison.sh readme --readme README.md`
+6. **Refresh the results section of this README:** `./parser_comparison.sh readme --readme README.md` (paper tables + standalone experiment blocks).
 
 **Paper-aligned defaults (tunable in scripts):** Ubuntu-class OS, `-O3`, single-threaded parser runs, ~30 s timeout, ~4 GiB per-process limit unless you override flags.
 
@@ -56,14 +56,14 @@ Everything after the command name is passed through unchanged (`argparse` flags,
 
 ## 2. Experimental results
 
-Tables below are generated from [`results/summary/frontend_table.tex`](results/summary/frontend_table.tex) (coverage + appendix scatter numbers). **Regenerate or update after changing the LaTeX source:**
+Tables below are generated from [`results/summary/frontend_table.tex`](results/summary/frontend_table.tex) (coverage + appendix scatter numbers). The **standalone experiment** subsection further down is filled from `results/{roundtrip,robustness,parse_vs_solve}/*_summary.md`. **Regenerate after changing LaTeX or re-running those benchmarks:**
 
 ```bash
 ./parser_comparison.sh readme
 ./parser_comparison.sh readme --readme README.md
 ```
 
-Long-form commentary and extra statistics: [results/summary/experimental_evaluation_data_summary.md](results/summary/experimental_evaluation_data_summary.md). Standalone copy of the tables: [results/summary/readme_paper_tables.md](results/summary/readme_paper_tables.md). Native robustness rollup: [results/summary/robustness_summary.md](results/summary/robustness_summary.md).
+Long-form commentary and extra statistics: [results/summary/experimental_evaluation_data_summary.md](results/summary/experimental_evaluation_data_summary.md). Standalone copy of the paper tables: [results/summary/readme_paper_tables.md](results/summary/readme_paper_tables.md). Concatenated standalone experiment write-ups (same sources spliced into this README): [results/summary/readme_standalone_experiments.md](results/summary/readme_standalone_experiments.md). Per-experiment folders: [results/roundtrip/roundtrip_summary.md](results/roundtrip/roundtrip_summary.md), [results/robustness/robustness_summary.md](results/robustness/robustness_summary.md), [results/parse_vs_solve/parse_vs_solve_summary.md](results/parse_vs_solve/parse_vs_solve_summary.md).
 
 Scatter PNGs (not embedded here): run `./parser_comparison.sh plots` → `results/frontend_scatter/{time,rss,nodes}/`.
 
@@ -140,3 +140,83 @@ jSMTLIB RSS reflects JVM process RSS and is not directly comparable to C++ front
 | jSMTLIB | 145,747 | 3.925 | 98.69 | 0.278 | 2.62 | 3.497 | 94.71 |
 
 <!--PAPER_TABLES_END-->
+
+### Standalone experiments (not multi-parser comparison)
+
+Each experiment writes its own folder under `results/` — CSV checkpoints/tables plus a Markdown summary (`*_summary.md`). **Commands:**
+
+| Experiment | Command (example) | Folder |
+| --- | --- | --- |
+| Round-trip | `./parser_comparison.sh roundtrip --file-list results/file_list.txt --timeout 30 --memory-mb 4096 -j 32` | `results/roundtrip/` |
+| Robustness | `./parser_comparison.sh robustness` | `results/robustness/` |
+| Z3 parse vs solve | `./parser_comparison.sh parse-vs-solve --file-list results/file_list.txt --timeout 30 --memory-mb 4096 -j 32` (build `z3_parse_vs_solve` in `external/z3/` first) | `results/parse_vs_solve/` |
+
+After updating summaries, splice them into this README (and write `results/summary/readme_standalone_experiments.md`) with `./parser_comparison.sh readme --readme README.md`.
+
+<!--EXTENDED_RESULTS_BEGIN-->
+
+_This block is auto-generated. Do not edit by hand._ Regenerate summaries by running `./parser_comparison.sh roundtrip`, `robustness`, or `parse-vs-solve`, then `./parser_comparison.sh readme --readme README.md`.
+
+---
+
+# Round-trip (SMTParser)
+
+Parse → linear SMT2 (`dumpSMT2`) → second parse on the same engine; success requires both parses without error and matching AST node counts (`match_nodes=1`).
+
+Primary CSV: `results/roundtrip/roundtrip_table.csv`.
+
+_No table yet._ Run:
+
+```bash
+./parser_comparison.sh roundtrip --file-list results/file_list.txt --timeout 30 --memory-mb 4096 -j 32
+```
+
+This file is regenerated when the round-trip benchmark finishes.
+
+---
+
+# Native (SMTParser) robustness summary
+
+Source: rows with `parser=native` in `parser_benchmark_table.csv`; grouped by theory directory name (e.g. `QF_BV`) in the benchmark path.
+
+## Overall totals
+
+| Metric | Count | Share |
+| --- | ---: | ---: |
+| ok | 161852 | 99.9179% |
+| timeout | 133 | 0.0821% |
+| fail | 0 | 0.0000% |
+| other | 0 | 0.0000% |
+
+## By theory family
+
+| Theory | ok | timeout | fail | other | total | fail%+timeout% |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| QF_AX | 551 | 0 | 0 | 0 | 551 | 0.0000% |
+| QF_BV | 46088 | 103 | 0 | 0 | 46191 | 0.2230% |
+| QF_FP | 40406 | 0 | 0 | 0 | 40406 | 0.0000% |
+| QF_LIA | 13285 | 21 | 0 | 0 | 13306 | 0.1578% |
+| QF_LRA | 1747 | 6 | 0 | 0 | 1753 | 0.3423% |
+| QF_NIA | 25452 | 0 | 0 | 0 | 25452 | 0.0000% |
+| QF_NRA | 12151 | 3 | 0 | 0 | 12154 | 0.0247% |
+| QF_S | 22172 | 0 | 0 | 0 | 22172 | 0.0000% |
+
+---
+
+# Z3 parse vs solve (standalone)
+
+Two timed passes per instance in one process: empty-assertions `check-sat` (parse path) vs full `check-sat` (includes solving). Columns `parse_ms` / `solve_ms` are wall-clock milliseconds from the instrumented binary.
+
+Primary CSV: `results/parse_vs_solve/z3_parse_solve_table.csv`.
+
+_No table yet._ Build `external/z3/z3_parse_vs_solve`, then run:
+
+```bash
+./parser_comparison.sh parse-vs-solve --file-list results/file_list.txt --timeout 30 --memory-mb 4096 -j 32
+```
+
+(build `z3_parse_vs_solve` under `external/z3/` first.)
+
+This file is regenerated when the parse-vs-solve benchmark finishes.
+
+<!--EXTENDED_RESULTS_END-->

@@ -8,8 +8,10 @@ import csv
 import json
 import os
 import resource
+import statistics
 import subprocess
 import sys
+from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = REPO_ROOT / "results" / "parse_vs_solve"
 CHECKPOINT = OUT_DIR / "z3_parse_solve_checkpoint.csv"
 TABLE = OUT_DIR / "z3_parse_solve_table.csv"
+SUMMARY = OUT_DIR / "parse_vs_solve_summary.md"
 
 
 def z3_binary():
@@ -190,6 +193,109 @@ def rebuild_table(rows, out):
             w.writerow({k: row.get(k, "") for k in header})
 
 
+def write_parse_vs_solve_summary(table_path, summary_path):
+    """Markdown rollup for Z3 parse-vs-solve (same folder as CSV)."""
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        rel = table_path.resolve().relative_to(REPO_ROOT.resolve())
+    except ValueError:
+        rel = table_path.name
+    lines = [
+        "# Z3 parse vs solve (standalone)",
+        "",
+        "Two timed passes per instance in one process: empty-assertions `check-sat` (parse path) vs full `check-sat` (includes solving). Columns `parse_ms` / `solve_ms` are wall-clock milliseconds from the instrumented binary.",
+        "",
+        "Primary CSV: `{}`.".format(rel),
+        "",
+    ]
+    if not table_path.is_file():
+        lines.extend(
+            [
+                "_No table yet._ Build `external/z3/z3_parse_vs_solve`, then run:",
+                "",
+                "```bash",
+                "./parser_comparison.sh parse-vs-solve --file-list results/file_list.txt --timeout 30 --memory-mb 4096 -j 32",
+                "```",
+                "",
+            ]
+        )
+        summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return
+
+    with open(table_path, "r", encoding="utf-8", newline="") as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        lines.append("_Table has no data rows yet._")
+        summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return
+
+    n = len(rows)
+    st_counts = Counter((r.get("status") or "").strip().lower() or "unknown" for r in rows)
+    lines.append("## Overall (by `status`)")
+    lines.append("")
+    lines.append("| Status | Count | Share |")
+    lines.append("| --- | ---: | ---: |")
+    for st in sorted(st_counts.keys(), key=lambda k: (-st_counts[k], k)):
+        c = st_counts[st]
+        lines.append("| `{}` | {} | {:.4f}% |".format(st, c, 100.0 * c / n if n else 0.0))
+    lines.append("")
+
+    ok_rows = [r for r in rows if (r.get("status") or "").strip().lower() == "ok"]
+    parse_ms = []
+    solve_ms = []
+    pot = []  # parse_over_total as float
+    pos = []  # parse_over_solve when finite
+    for r in ok_rows:
+        try:
+            parse_ms.append(float(r.get("parse_ms") or 0))
+            solve_ms.append(float(r.get("solve_ms") or 0))
+        except (TypeError, ValueError):
+            continue
+        pt = (r.get("parse_over_total") or "").strip()
+        if pt:
+            try:
+                pot.append(float(pt))
+            except ValueError:
+                pass
+        ps = (r.get("parse_over_solve") or "").strip().lower()
+        if ps and ps != "inf":
+            try:
+                pos.append(float(ps))
+            except ValueError:
+                pass
+
+    lines.append("## Timing (rows with `status=ok` only)")
+    lines.append("")
+    lines.append("| Metric | Value |")
+    lines.append("| --- | ---: |")
+    lines.append("| Count | {} |".format(len(ok_rows)))
+    if parse_ms:
+        lines.append("| Median `parse_ms` | {:.6g} |".format(statistics.median(parse_ms)))
+        lines.append("| Median `solve_ms` | {:.6g} |".format(statistics.median(solve_ms)))
+    else:
+        lines.append("| Median `parse_ms` | — |")
+        lines.append("| Median `solve_ms` | — |")
+    if pot:
+        lines.append(
+            "| Median `parse_over_total` (parse / (parse+solve)) | {:.6g} |".format(
+                statistics.median(pot)
+            )
+        )
+    else:
+        lines.append("| Median `parse_over_total` | — |")
+    if pos:
+        lines.append(
+            "| Median `parse_over_solve` (finite only) | {:.6g} |".format(statistics.median(pos))
+        )
+    else:
+        lines.append("| Median `parse_over_solve` (finite) | — |")
+    lines.append("")
+    lines.append(
+        "_Regenerate this file by re-running the benchmark; refresh README with `./parser_comparison.sh readme --readme README.md`._"
+    )
+    summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def main():
     ap = argparse.ArgumentParser(description="Z3 parse vs solve wall-clock benchmark")
     ap.add_argument("--file-list", type=Path, required=True)
@@ -284,7 +390,9 @@ def main():
 
     _, allrows = load_done(args.checkpoint)
     rebuild_table(allrows, args.table)
+    write_parse_vs_solve_summary(args.table, SUMMARY)
     print("table:", args.table, datetime.now().isoformat())
+    print("summary:", SUMMARY.resolve())
     return 0
 
 

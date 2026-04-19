@@ -29,7 +29,9 @@ usage() {
             ./parser_comparison.sh plots results/parser_benchmark_table.csv
 
       readme
-          Build Markdown tables from results/summary/frontend_table.tex.
+          Build Markdown tables from results/summary/frontend_table.tex; also merges
+          standalone experiment summaries into README (see markers there) and writes
+          results/summary/readme_standalone_experiments.md.
           Same as: python3 scripts/gen_readme_tables.py ...
           Example:
             ./parser_comparison.sh readme
@@ -37,18 +39,21 @@ usage() {
 
       roundtrip
           SMTParser parse → dumpSMT2 → reparse batch run.
+          Writes results/roundtrip/roundtrip_table.csv and roundtrip_summary.md.
           Same as: python3 scripts/run_roundtrip_benchmark.py ...
           Example:
             ./parser_comparison.sh roundtrip --file-list results/file_list.txt -j 32
 
       robustness
           Aggregate native status by theory (optional round-trip merge).
+          Writes results/robustness/robustness_summary.md.
           Same as: python3 scripts/summarize_robustness.py ...
           Example:
             ./parser_comparison.sh robustness
 
       parse-vs-solve
           Z3 parse vs check_sat wall-clock benchmark.
+          Writes results/parse_vs_solve/*.csv and parse_vs_solve_summary.md.
           Same as: python3 scripts/run_parse_vs_solve_benchmark.py ...
           Example:
             ./parser_comparison.sh parse-vs-solve --file-list results/file_list.txt -j 8

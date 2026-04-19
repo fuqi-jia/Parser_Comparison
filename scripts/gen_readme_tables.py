@@ -14,6 +14,15 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_TEX = REPO / "results" / "summary" / "frontend_table.tex"
 
+EXTENDED_BEGIN = "<!--EXTENDED_RESULTS_BEGIN-->"
+EXTENDED_END = "<!--EXTENDED_RESULTS_END-->"
+
+STANDALONE_SUMMARIES = (
+    ("results/roundtrip/roundtrip_summary.md", "roundtrip"),
+    ("results/robustness/robustness_summary.md", "robustness"),
+    ("results/parse_vs_solve/parse_vs_solve_summary.md", "parse-vs-solve"),
+)
+
 
 def unescape_tex_cell(s):
     s = s.strip()
@@ -158,6 +167,40 @@ def splice_readme(readme_path, md_block):
     return True, "Updated {}".format(p)
 
 
+def build_standalone_experiments_md():
+    """Concatenate per-experiment summaries from results/<experiment>/."""
+    parts = [
+        "_This block is auto-generated. Do not edit by hand._ "
+        "Regenerate summaries by running `./parser_comparison.sh roundtrip`, `robustness`, or `parse-vs-solve`, "
+        "then `./parser_comparison.sh readme --readme README.md`.",
+        "",
+    ]
+    for rel, sh_cmd in STANDALONE_SUMMARIES:
+        path = (REPO / rel).resolve()
+        parts.append("---")
+        parts.append("")
+        if path.is_file():
+            parts.append(path.read_text(encoding="utf-8").rstrip())
+        else:
+            parts.append(
+                "_Missing `{}`._ Run `./parser_comparison.sh {} …`.".format(rel, sh_cmd)
+            )
+        parts.append("")
+    return "\n".join(parts).strip() + "\n"
+
+
+def splice_readme_extended(readme_path, md_block):
+    p = Path(readme_path)
+    s = p.read_text(encoding="utf-8")
+    if EXTENDED_BEGIN not in s or EXTENDED_END not in s:
+        return True, "README has no {} / {} (skipped)".format(EXTENDED_BEGIN, EXTENDED_END)
+    a = s.index(EXTENDED_BEGIN) + len(EXTENDED_BEGIN)
+    b = s.index(EXTENDED_END)
+    new_s = s[:a] + "\n\n" + md_block.strip() + "\n\n" + s[b:]
+    p.write_text(new_s, encoding="utf-8")
+    return True, "Updated extended block in {}".format(p)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tex", type=Path, default=DEFAULT_TEX)
@@ -179,10 +222,19 @@ def main():
     out_md.parent.mkdir(parents=True, exist_ok=True)
     out_md.write_text(md, encoding="utf-8")
     print("Wrote", out_md)
+    ext_md = build_standalone_experiments_md()
+    ext_path = REPO / "results" / "summary" / "readme_standalone_experiments.md"
+    ext_path.parent.mkdir(parents=True, exist_ok=True)
+    ext_path.write_text(ext_md, encoding="utf-8")
+    print("Wrote", ext_path)
     if args.readme:
         ok, msg = splice_readme(args.readme.resolve(), md)
         print(msg)
-        return 0 if ok else 1
+        if not ok:
+            return 1
+        ok2, msg2 = splice_readme_extended(args.readme.resolve(), ext_md)
+        print(msg2)
+        return 0
     return 0
 
 

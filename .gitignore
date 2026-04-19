@@ -187,5 +187,12 @@ benchmark/*
 results/*
 !results/summary/*
 !results/frontend_scatter/*
+# Standalone experiment summaries (per-folder *_summary.md)
+!results/roundtrip/
+!results/roundtrip/*.md
+!results/robustness/
+!results/robustness/*.md
+!results/parse_vs_solve/
+!results/parse_vs_solve/*.md
 
 .memory

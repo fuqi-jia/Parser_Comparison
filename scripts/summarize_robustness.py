@@ -36,7 +36,7 @@ def main():
     ap.add_argument(
         "--out",
         type=Path,
-        default=REPO / "results" / "summary" / "robustness_summary.md",
+        default=REPO / "results" / "robustness" / "robustness_summary.md",
     )
     args = ap.parse_args()
 

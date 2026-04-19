@@ -11,6 +11,7 @@ import resource
 import signal
 import subprocess
 import sys
+from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 OUT_DIR = REPO_ROOT / "results" / "roundtrip"
 CHECKPOINT = OUT_DIR / "roundtrip_checkpoint.csv"
 TABLE = OUT_DIR / "roundtrip_table.csv"
+SUMMARY = OUT_DIR / "roundtrip_summary.md"
 BINARY_CANDIDATES = [
     REPO_ROOT / "build" / "roundtrip_tool",
     REPO_ROOT / "roundtrip_tool",
@@ -171,6 +173,99 @@ def rebuild_table(checkpoint_rows, out_table):
             w.writerow({k: row.get(k, "") for k in header})
 
 
+def theory_from_benchmark_path(p):
+    parts = Path(p).parts
+    for x in parts:
+        if x.startswith("QF_") and len(x) <= 16:
+            return x
+    return "unknown"
+
+
+def write_roundtrip_summary(table_path, summary_path):
+    """Markdown rollup for this standalone experiment (same folder as CSV)."""
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        rel = table_path.resolve().relative_to(REPO_ROOT.resolve())
+    except ValueError:
+        rel = table_path.name
+    lines = [
+        "# Round-trip (SMTParser)",
+        "",
+        "Parse → linear SMT2 (`dumpSMT2`) → second parse on the same engine; success requires both parses without error and matching AST node counts (`match_nodes=1`).",
+        "",
+        "Primary CSV: `{}`.".format(rel),
+        "",
+    ]
+    if not table_path.is_file():
+        lines.extend(
+            [
+                "_No table yet._ Run:",
+                "",
+                "```bash",
+                "./parser_comparison.sh roundtrip --file-list results/file_list.txt --timeout 30 --memory-mb 4096 -j 32",
+                "```",
+                "",
+            ]
+        )
+        summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return
+
+    with open(table_path, "r", encoding="utf-8", newline="") as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        lines.append("_Table has no data rows yet._")
+        summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return
+
+    n = len(rows)
+    st_counts = Counter((r.get("status") or "").strip().lower() or "unknown" for r in rows)
+
+    lines.append("## Overall")
+    lines.append("")
+    lines.append(
+        "In this driver, `status=ok` means both parses succeeded and node counts matched (`match_nodes=1` in the CSV).",
+    )
+    lines.append("")
+    lines.append("| Status | Count | Share |")
+    lines.append("| --- | ---: | ---: |")
+    for label in sorted(st_counts.keys(), key=lambda k: (-st_counts[k], k)):
+        c = st_counts[label]
+        lines.append(
+            "| `{}` | {} | {:.4f}% |".format(label, c, 100.0 * c / n if n else 0.0)
+        )
+    lines.append("")
+
+    by_th = defaultdict(lambda: Counter())
+    for r in rows:
+        th = theory_from_benchmark_path(r.get("file") or "")
+        by_th[th][(r.get("status") or "").strip().lower() or "unknown"] += 1
+
+    lines.append("## By theory family (row counts by `status`)")
+    lines.append("")
+    lines.append("| Theory | ok | mismatch | fail | timeout | other | total |")
+    lines.append("| --- | ---: | ---: | ---: | ---: | ---: | ---: |")
+    for th in sorted(by_th.keys()):
+        bc = by_th[th]
+        tot = sum(bc.values())
+        oth = sum(c for k, c in bc.items() if k not in ("ok", "mismatch", "fail", "timeout"))
+        lines.append(
+            "| {} | {} | {} | {} | {} | {} | {} |".format(
+                th,
+                bc.get("ok", 0),
+                bc.get("mismatch", 0),
+                bc.get("fail", 0),
+                bc.get("timeout", 0),
+                oth,
+                tot,
+            )
+        )
+    lines.append("")
+    lines.append(
+        "_Regenerate this file by re-running the round-trip benchmark; refresh README with `./parser_comparison.sh readme --readme README.md`._"
+    )
+    summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def main():
     ap = argparse.ArgumentParser(description="SOMTParser round-trip benchmark")
     ap.add_argument("--file-list", type=Path, required=True)
@@ -234,7 +329,9 @@ def main():
 
     _, allrows = load_done(args.checkpoint)
     rebuild_table(allrows, args.table)
+    write_roundtrip_summary(args.table, SUMMARY)
     print("table:", args.table, datetime.now().isoformat())
+    print("summary:", SUMMARY.resolve())
     return 0
 
 
