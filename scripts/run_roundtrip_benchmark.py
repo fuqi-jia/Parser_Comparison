@@ -193,7 +193,7 @@ def write_roundtrip_summary(table_path, summary_path):
     lines = [
         "## Round-trip correctness (SOMTParser)",
         "",
-        "Two experimental settings are common in front-end work: **(A) same-engine parse → print → reparse** and **(B) cross-parser** runs on one file. This table is **(A) only**: SOMTParser reads the original script, emits SMT2 via `dumpSMT2`, then SOMTParser parses that dump again (two parser objects, **one** implementation). The intermediate file can change structure, so first-pass and second-pass **node counts are not tautologically equal**—`mismatch` is informative. **(B)** is the multi-parser `benchmark`, which records `ast_nodes` per tool on the same path.",
+        "Two experimental settings are common in front-end work: **(A) same-engine parse → print → reparse** and **(B) cross-parser** runs on one file. This table is **(A) only**: SOMTParser parses the original script, **writes intermediate SMT2 with `dumpSMT2`**, then parses that text again (two parser objects, **one** implementation). Status **`mismatch`** means both parses succeeded but **AST node counts disagree**—that is expected to come from **`dumpSMT2` changing structure** (layout, grouping, or equivalent rewrites), not from “wrong logic” in the sense of bad `sat`/`unsat`; first-pass vs post-dump **node counts are not tautologically equal**. **(B)** is the multi-parser `benchmark`, which records `ast_nodes` per tool on the same path.",
         "",
     ]
     if not table_path.is_file():
@@ -254,7 +254,12 @@ def main():
     ap = argparse.ArgumentParser(
         description="Same-engine SOMTParser round-trip (parse → dumpSMT2 → reparse); not cross-parser."
     )
-    ap.add_argument("--file-list", type=Path, required=True)
+    ap.add_argument(
+        "--file-list",
+        type=Path,
+        default=None,
+        help="One .smt2 path per line (required unless --finalize-summary)",
+    )
     ap.add_argument(
         "--timeout",
         type=int,
@@ -277,6 +282,16 @@ def main():
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--checkpoint", type=Path, default=CHECKPOINT)
     ap.add_argument("--table", type=Path, default=TABLE)
+    ap.add_argument(
+        "--no-summary",
+        action="store_true",
+        help="Do not write roundtrip_summary.md at end (keep a frozen hand-edited summary while a long run finishes)",
+    )
+    ap.add_argument(
+        "--finalize-summary",
+        action="store_true",
+        help="Only rebuild roundtrip_table.csv + roundtrip_summary.md from existing checkpoint; no benchmark",
+    )
     ep.add_preset_arguments(ap)
     args = ap.parse_args()
     ep.require_known_preset(args.preset)
@@ -285,6 +300,21 @@ def main():
     args.jobs = ep.pick(args.preset, "jobs", args.jobs, 24)
     if args.preset:
         print("preset {}: timeout={}s memory_mb={} jobs={}".format(args.preset, args.timeout, args.memory_mb, args.jobs))
+
+    args.checkpoint = args.checkpoint.resolve()
+    args.table = args.table.resolve()
+
+    if args.finalize_summary:
+        _, allrows = load_done(args.checkpoint)
+        rebuild_table(allrows, args.table)
+        write_roundtrip_summary(args.table, SUMMARY)
+        print("table:", args.table, datetime.now().isoformat())
+        print("summary:", SUMMARY.resolve())
+        return 0
+
+    if not args.file_list:
+        print("error: --file-list required (unless --finalize-summary)", file=sys.stderr)
+        return 1
 
     fl = (REPO_ROOT / args.file_list).resolve() if not args.file_list.is_absolute() else args.file_list.resolve()
     files = load_file_list(fl)
@@ -298,8 +328,6 @@ def main():
         return 1
     print("binary:", binary)
 
-    args.checkpoint = args.checkpoint.resolve()
-    args.table = args.table.resolve()
     done, crows = load_done(args.checkpoint)
     if not args.resume:
         if args.checkpoint.is_file():
@@ -338,9 +366,13 @@ def main():
 
     _, allrows = load_done(args.checkpoint)
     rebuild_table(allrows, args.table)
-    write_roundtrip_summary(args.table, SUMMARY)
+    if not args.no_summary:
+        write_roundtrip_summary(args.table, SUMMARY)
     print("table:", args.table, datetime.now().isoformat())
-    print("summary:", SUMMARY.resolve())
+    if not args.no_summary:
+        print("summary:", SUMMARY.resolve())
+    else:
+        print("summary: skipped (--no-summary); run later: --finalize-summary")
     return 0
 
 

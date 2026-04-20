@@ -49,6 +49,8 @@ usage() {
           Same as: python3 scripts/run_roundtrip_benchmark.py ...
           Example:
             ./parser_comparison.sh roundtrip --file-list results/file_list.txt -j 32
+          Optional: --no-summary keeps roundtrip_summary.md unchanged until the run ends;
+            then ./parser_comparison.sh roundtrip --finalize-summary
 
       robustness
           Aggregate native status by theory (optional round-trip merge).

@@ -181,7 +181,7 @@ Same presentation style as **Front-end coverage** above: section titles plus tab
 
 ## Round-trip correctness (SOMTParser)
 
-Two experimental settings are common in front-end work: **(A) same-engine parse → print → reparse** and **(B) cross-parser** runs on one file. This table is **(A) only**: SOMTParser reads the original script, emits SMT2 via `dumpSMT2`, then SOMTParser parses that dump again (two parser objects, **one** implementation). The intermediate file can change structure, so first-pass and second-pass **node counts are not tautologically equal**—`mismatch` is informative. **(B)** is the multi-parser `benchmark`, which records `ast_nodes` per tool on the same path.
+Two experimental settings are common in front-end work: **(A) same-engine parse → print → reparse** and **(B) cross-parser** runs on one file. This table is **(A) only**: SOMTParser parses the original script, **writes intermediate SMT2 with `dumpSMT2`**, then parses that text again (two parser objects, **one** implementation). Status **`mismatch`** means both parses succeeded but **AST node counts disagree**—that is expected to come from **`dumpSMT2` changing structure** (layout, grouping, or equivalent rewrites), not from “wrong logic” in the sense of bad `sat`/`unsat`; first-pass vs post-dump **node counts are not tautologically equal**. **(B)** is the multi-parser `benchmark`, which records `ast_nodes` per tool on the same path.
 
 _No aggregate results yet._
 
