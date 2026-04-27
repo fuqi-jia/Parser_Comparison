@@ -183,7 +183,27 @@ Same presentation style as **Front-end coverage** above: section titles plus tab
 
 Two experimental settings are common in front-end work: **(A) same-engine parse → print → reparse** and **(B) cross-parser** runs on one file. This table is **(A) only**: SOMTParser parses the original script, **writes intermediate SMT2 with `dumpSMT2`**, then parses that text again (two parser objects, **one** implementation). Status **`mismatch`** means both parses succeeded but **AST node counts disagree**—that is expected to come from **`dumpSMT2` changing structure** (layout, grouping, or equivalent rewrites), not from “wrong logic” in the sense of bad `sat`/`unsat`; first-pass vs post-dump **node counts are not tautologically equal**. **(B)** is the multi-parser `benchmark`, which records `ast_nodes` per tool on the same path.
 
-_No aggregate results yet._
+### Overall
+
+| Status | Count | Share |
+| --- | ---: | ---: |
+| `ok` | 149895 | 92.5363% |
+| `timeout` | 10724 | 6.6204% |
+| `mismatch` | 1361 | 0.8402% |
+| `fail` | 5 | 0.0031% |
+
+### By theory family
+
+| Theory | ok | mismatch | fail | timeout | other | total |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| QF_AX | 454 | 97 | 0 | 0 | 0 | 551 |
+| QF_BV | 37020 | 1246 | 5 | 7920 | 0 | 46191 |
+| QF_FP | 40388 | 18 | 0 | 0 | 0 | 40406 |
+| QF_LIA | 10507 | 0 | 0 | 2799 | 0 | 13306 |
+| QF_LRA | 1750 | 0 | 0 | 3 | 0 | 1753 |
+| QF_NIA | 25452 | 0 | 0 | 0 | 0 | 25452 |
+| QF_NRA | 12152 | 0 | 0 | 2 | 0 | 12154 |
+| QF_S | 22172 | 0 | 0 | 0 | 0 | 22172 |
 
 ---
 
@@ -217,16 +237,67 @@ Per-theory counts of SOMTParser (`native`) front-end outcomes (`ok`, `timeout`, 
 
 ## Z3 parse vs solver wall time (standalone)
 
-Per instance, one Z3 process loads assertions (`parse_file` / `parse_string`), then a single full `check()`; `parse_ms` / `solve_ms` are wall-clock milliseconds for those two phases (see `external/z3/z3_parse_vs_solve.cpp`).
+Per instance, **one** Z3 process (`z3_parse_vs_solve`): load the script with `parse_file` / `parse_string`, add all assertions to a solver, then run **one** `check()` (full problem). `parse_ms` is wall time for parse+load; `solve_ms` is wall time for that single `check()`. This is **not** a two-verdict agreement experiment (no cross-check of sat vs unsat); for that you would need a gold label or a second pipeline and a separate results table.
 
-_No aggregate results yet._
+### Overall (by outcome)
+
+| Status | Count | Share |
+| --- | ---: | ---: |
+| `ok` | 158099 | 97.6010% |
+| `timeout` | 3769 | 2.3268% |
+| `fail` | 84 | 0.0519% |
+| `solve_fail` | 32 | 0.0198% |
+| `parse_fail` | 1 | 0.0006% |
+
+### Timing (`status=ok` only)
+
+| Metric | Value |
+| --- | ---: |
+| Count | 158099 |
+| Median `parse_ms` | 10.5111 |
+| Median `solve_ms` | 18.2055 |
+| Median `parse_over_total` (parse / (parse+solve)) | 0.362239 |
+| Median `parse_over_solve` (finite only) | 0.567986 |
 
 ---
 
 ## SOMTParser `dumpSMT2` vs Z3 verdict agreement (standalone)
 
-**`dual-path` driver:** Path **A** — Z3 parses the **original** SMT2 and runs `check()`. Path **B** — SOMTParser parses the same file, writes `dumpSMT2` to a temp file, then Z3 parses that dump and runs `check()`. The CSV records `path_a_verdict` / `path_b_verdict` (`sat` / `unsat` / `unknown`) and an `info` string (e.g. `path_a=sat;path_b=unsat;sat_unsat_mismatch=1`). **`verdict_disagree`** is set only for **(sat, unsat)** or **(unsat, sat)**; `unknown` on either side does **not** count as a mismatch. Timings: `path_a_parse_ms`, `path_a_solve_ms`, `native_dump_ms`, `path_b_parse_ms`, `path_b_solve_ms`. Run: `./parser_comparison.sh dual-path --file-list results/file_list.txt --preset sat2026` (requires `build/native_z3_dual_path` and libZ3).
+**Path A:** Z3 `parse` + `check` on the **original** SMT2 file. **Path B:** SOMTParser parses the same file, `dumpSMT2` to a temp file, then Z3 `parse` + `check` on the dump. **Disagreement** is only `(sat,unsat)` or `(unsat,sat)`; if either side is `unknown` or a path did not complete, we do not count that as a sat/unsat mismatch. The `info` column repeats `path_a=…;path_b=…` for quick grepping; full timings are in the CSV.
 
-_No aggregate results yet._
+### Overall (by `status`)
+
+| Status | Count | Share |
+| --- | ---: | ---: |
+| `verdict_agree` | 152374 | 94.0667% |
+| `timeout` | 8991 | 5.5505% |
+| `dump_fail` | 439 | 0.2710% |
+| `fail` | 92 | 0.0568% |
+| `path_b_incomplete` | 68 | 0.0420% |
+| `path_a_incomplete` | 19 | 0.0117% |
+| `verdict_disagree` | 2 | 0.0012% |
+
+### Verdict disagreement (sat vs unsat only)
+
+| Metric | Count |
+| --- | ---: |
+| `verdict_disagree==1` | 2 |
+| Share of all rows | 0.0012% |
+
+### Verdict marginals
+
+| path_a_verdict | Count |
+| --- | ---: |
+| `sat` | 76006 |
+| `unsat` | 63642 |
+| `unknown` | 13235 |
+| `∅` | 9102 |
+
+| path_b_verdict | Count |
+| --- | ---: |
+| `sat` | 75873 |
+| `unsat` | 62950 |
+| `unknown` | 13553 |
+| `∅` | 9609 |
 
 <!--EXTENDED_RESULTS_END-->
