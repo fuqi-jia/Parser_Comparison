@@ -1,0 +1,39 @@
+# LLM trial configuration. Copy to config/llm.yaml and edit.
+#
+# The trial harness (scripts/run_llm_trial.py) reads this file via PyYAML
+# (preferred) or a tiny tolerant parser fallback (no dependency). Strings,
+# integers, and bools are supported; nested mappings are not.
+#
+# Until you change `provider` from `mock` and supply real credentials,
+# the harness uses pre-recorded responses under scripts/mock_llm/<frontend>/
+# and never makes a network call.
+
+provider: mock                  # mock | openai | anthropic
+model: mock-deterministic       # ignored when provider=mock
+api_key_env: OPENAI_API_KEY     # only read if provider != mock
+api_base_env: OPENAI_BASE_URL   # optional override (e.g. local proxy)
+mock_dir: scripts/mock_llm
+
+# How many fix iterations after the initial generation. K=3 means up to
+# 4 attempts total (turn_0 + turn_1 + turn_2 + turn_3).
+fix_iterations: 3
+
+# Per-iteration prompt token budget. The harness counts tokens with
+# tiktoken if present, else with a regex word-count approximation.
+prompt_token_budget: 24000
+
+# Trials per front-end (run_llm_campaign.py respects this).
+trials_per_frontend: 10
+
+# Hard wall-clock cap per single trial.
+trial_timeout_seconds: 600
+
+# At most this many failing dev files are echoed back per fix iteration.
+max_dev_failures_in_feedback: 5
+
+# RNG seed used for tie-breaking and any sampling inside the harness.
+seed: 42
+
+# When provider != mock, you may also set:
+#   temperature: 0.0
+#   max_tokens: 8192

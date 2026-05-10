@@ -1,0 +1,6 @@
+(set-logic QF_RDL)
+(declare-const x Real)
+(declare-const y Real)
+(assert (= (- x y) 2))
+(assert (< (- x y) 2))
+(check-sat)

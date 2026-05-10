@@ -1,0 +1,7 @@
+test,expected
+sat_conj_01,sat
+unsat_conj_01,unsat
+strict_unsat_01,unsat
+unary_bounds_sat_01,sat
+equality_unsat_01,unsat
+unsupported_or_p0,unknown

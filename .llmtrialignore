@@ -1,0 +1,51 @@
+# .llmtrialignore — files/directories that the LLM trial harness must NOT
+# bundle into any prompt or feedback message sent to the LLM.
+#
+# Format: gitignore-style globs, evaluated relative to the repo root.
+# Matched paths are still tracked by git and used by the harness itself; they
+# are simply withheld from every LLM-facing prompt or fix iteration.
+#
+# Three categories are forbidden:
+#   1. Anything that would make a single front-end win unfairly (existing
+#      adapter implementations, the shared backend internals, any other
+#      front-end's adapter source).
+#   2. Anything that leaks the final test set or its expected verdicts.
+#   3. Anything from the v1 demo (hand-written adapter / sanity tests) that
+#      could be copy-pasted by the LLM.
+#
+# The harness `case_studies/rdl_prototyping/scripts/run_llm_trial.py` reads
+# this file via fnmatch.
+
+# --- v1 demo, fully archived ---------------------------------------------
+case_studies/rdl_prototyping/_archive/
+
+# --- shared backend (the only allowed sat/unsat decider) ------------------
+# LLM only sees its CLI contract via base_task.md, never the source.
+case_studies/rdl_prototyping/shared_backend/
+case_studies/rdl_prototyping/schema/
+
+# --- final test split & expected verdicts --------------------------------
+case_studies/rdl_prototyping/data/test/
+case_studies/rdl_prototyping/data/test_index.csv
+case_studies/rdl_prototyping/data/oversize_index.csv
+case_studies/rdl_prototyping/data/unlabeled_index.csv
+
+# --- per-trial results from this and other runs --------------------------
+case_studies/rdl_prototyping/results/
+
+# --- adapter source files belonging to OTHER front-ends ------------------
+# (handled programmatically by the harness; listed here as documentation)
+# case_studies/rdl_prototyping/adapters/<other-frontend>/
+
+# --- vendored upstream parsers that contain reference RDL implementations -
+external/cvc5/src/theory/arith/idl/
+external/z3/src/smt/theory_diff_logic.h
+external/z3/src/smt/theory_diff_logic_def.h
+external/z3/src/smt/theory_diff_logic.cpp
+
+# --- repo-level harness internals (not part of the case study) -----------
+scripts/
+src/
+SOMTParser/
+build/
+build_rdl/

@@ -146,6 +146,43 @@ usage() {
           Example:
             ./parser_comparison.sh sample
 
+      rdl-case-study | rdl_case_study
+          [deprecated] v1 hand-written demo entry. Now a no-op that exits
+          non-zero with a pointer to the v2 commands below.
+
+      rdl-prepare-data
+          Extract benchmark/QF_RDL.tar.zst, build the per-file index, and
+          produce the deterministic dev/test split (seed=42, n_dev=30).
+          Same as: ./case_studies/rdl_prototyping/scripts/extract_qf_rdl.sh
+                && python3 .../scripts/build_qf_rdl_index.py
+                && python3 .../scripts/split_dev_test.py
+          Idempotent. Run once before any LLM trial.
+
+      rdl-llm-campaign
+          Run N independent LLM trials per front-end. Reads
+          case_studies/rdl_prototyping/config/llm.yaml (provider=mock by
+          default; copy llm.yaml.example to llm.yaml and set provider+API
+          key to enable real LLMs).
+          Same as: python3 .../scripts/run_llm_campaign.py ...
+          Example:
+            ./parser_comparison.sh rdl-llm-campaign \
+                --frontends pysmt z3_cpp --trials 10
+
+      rdl-aggregate
+          Read every results/runs/<frontend>/run_NN/meta.json and write
+          aggregate CSV + LaTeX/Markdown tables under
+          case_studies/rdl_prototyping/results/aggregate/. Read-only with
+          respect to runs/.
+
+      rdl-audit
+          Static fairness audit on a single adapter source dir. Useful
+          when reviewing a trial by hand. Forwards to
+          python3 .../scripts/audit_adapter.py
+          Example:
+            ./parser_comparison.sh rdl-audit \
+                --src case_studies/rdl_prototyping/results/runs/pysmt/run_00/src/turn_00 \
+                --frontend pysmt
+
       help | -h | --help
           Show this message.
 
@@ -220,6 +257,38 @@ case "${CMD}" in
         ;;
     sample)
         exec bash "${SCRIPTS}/sample.sh" "$@"
+        ;;
+    rdl-case-study|rdl_case_study)
+        cat >&2 <<'EOF'
+[deprecated] rdl-case-study referred to the v1 demo (hand-written SOMTParser
+adapter + 6 sanity tests). Those files now live under
+case_studies/rdl_prototyping/_archive/v1_demo/ and are no longer wired into
+the build or the harness, so the LLM trial in v2 cannot accidentally see
+them.
+
+Use these v2 commands instead:
+  ./parser_comparison.sh rdl-prepare-data    # extract + index + dev/test split
+  ./parser_comparison.sh rdl-llm-campaign    # run N trials per front-end
+  ./parser_comparison.sh rdl-aggregate       # paper tables from results/runs/
+  ./parser_comparison.sh rdl-audit           # static fairness audit
+EOF
+        exit 2
+        ;;
+    rdl-prepare-data|rdl_prepare_data)
+        RDL_DIR="${ROOT}/case_studies/rdl_prototyping"
+        echo "[rdl-prepare-data] extract -> index -> dev/test split" >&2
+        bash    "${RDL_DIR}/scripts/extract_qf_rdl.sh" "$@"
+        python3 "${RDL_DIR}/scripts/build_qf_rdl_index.py"
+        python3 "${RDL_DIR}/scripts/split_dev_test.py"
+        ;;
+    rdl-llm-campaign|rdl_llm_campaign)
+        exec python3 "${ROOT}/case_studies/rdl_prototyping/scripts/run_llm_campaign.py" "$@"
+        ;;
+    rdl-aggregate|rdl_aggregate)
+        exec python3 "${ROOT}/case_studies/rdl_prototyping/scripts/aggregate_runs.py" "$@"
+        ;;
+    rdl-audit|rdl_audit)
+        exec python3 "${ROOT}/case_studies/rdl_prototyping/scripts/audit_adapter.py" "$@"
         ;;
     help|-h|--help)
         usage

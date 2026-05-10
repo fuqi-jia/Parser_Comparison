@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://parser-comparison.example/case_studies/rdl_prototyping/rdl_atoms.schema.json",
+  "title": "RDL atom interchange format",
+  "description": "Output produced by every front-end adapter and consumed by shared_backend/rdl_backend.py. The shared backend MUST be the only thing that returns sat/unsat/unknown. Adapters MUST NOT call any built-in solver.",
+  "type": "object",
+  "required": ["status", "frontend"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["ok", "unsupported", "error"],
+      "description": "ok: rdl atoms successfully extracted; unsupported: input contains constructs the adapter intentionally rejects (e.g. non-conjunctive Boolean structure for P0); error: adapter crashed or input could not be parsed"
+    },
+    "frontend": {
+      "type": "string",
+      "description": "Identifier for the front-end this adapter wraps, e.g. somtparser, z3_cpp, cvc5_cpp, smt_switch, pysmt, antlr4, jsmtlib"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["conjunction", "boolean"],
+      "description": "P0 always uses conjunction. P1 (reserved) will use boolean with a CNF and an atom map"
+    },
+    "variables": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Includes the special node ZERO when unary bounds are present"
+    },
+    "constraints": {
+      "type": "array",
+      "description": "Each entry is x - y (op) bound where op is < or <=. Other forms are normalized: >= and > are flipped, = is split into two entries. Strict <, > and the strict half of equality become strict=true.",
+      "items": {
+        "type": "object",
+        "required": ["lhs", "rhs", "bound", "strict"],
+        "properties": {
+          "lhs": {"type": "string", "description": "Variable name on the positive side; ZERO is allowed for unary bounds"},
+          "rhs": {"type": "string", "description": "Variable name on the negative side; ZERO is allowed for unary bounds"},
+          "bound": {"type": "string", "description": "String parsable by Python fractions.Fraction, e.g. '3', '-2', '7/2', '3.5'"},
+          "strict": {"type": "boolean"},
+          "source": {"type": "string", "description": "Optional: original SMT-LIB s-expression for debugging"}
+        }
+      }
+    },
+    "cnf": {
+      "type": "array",
+      "description": "Reserved for P1: list of clauses, each clause is a list of nonzero ints (positive => atom id, negative => negated atom id)",
+      "items": {
+        "type": "array",
+        "items": {"type": "integer"}
+      }
+    },
+    "atoms": {
+      "type": "object",
+      "description": "Reserved for P1: maps positive atom id (as string) to a constraint object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["lhs", "rhs", "bound", "strict"],
+        "properties": {
+          "lhs": {"type": "string"},
+          "rhs": {"type": "string"},
+          "bound": {"type": "string"},
+          "strict": {"type": "boolean"}
+        }
+      }
+    },
+    "reason": {"type": "string", "description": "Required when status is unsupported or error"},
+    "detail": {"type": "string", "description": "Optional free-form diagnostic text"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "ok"}}, "required": ["status"]},
+      "then": {"required": ["mode"]}
+    },
+    {
+      "if": {"properties": {"status": {"const": "unsupported"}}, "required": ["status"]},
+      "then": {"required": ["reason"]}
+    },
+    {
+      "if": {"properties": {"status": {"const": "error"}}, "required": ["status"]},
+      "then": {"required": ["reason"]}
+    }
+  ]
+}

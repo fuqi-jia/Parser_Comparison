@@ -229,3 +229,26 @@ results/native_z3_dual_path/native_z3_dual_path_checkpoint.csv
 results/native_z3_dual_path/native_z3_dual_path_table.csv
 
 .memory
+
+# benchmark
+!benchmark/QF_RDL.tar.zst
+# RDL case study — keep the v1 demo sanity .smt2 files even though *.smt2
+# is globally ignored above. They live under _archive/ and are evidence
+# of what was archived; LLM trials are still kept away from them via
+# .llmtrialignore.
+!case_studies/rdl_prototyping/_archive/v1_demo/tests/*.smt2
+
+# RDL case study v2 — generated artefacts (not committed by default)
+case_studies/rdl_prototyping/data/qf_rdl_raw/
+case_studies/rdl_prototyping/data/dev/
+case_studies/rdl_prototyping/data/test/
+case_studies/rdl_prototyping/data/qf_rdl_index.csv
+case_studies/rdl_prototyping/data/dev_index.csv
+case_studies/rdl_prototyping/data/test_index.csv
+case_studies/rdl_prototyping/data/oversize_index.csv
+case_studies/rdl_prototyping/data/unlabeled_index.csv
+case_studies/rdl_prototyping/results/runs/
+case_studies/rdl_prototyping/results/aggregate/
+case_studies/rdl_prototyping/config/llm.yaml
+case_studies/rdl_prototyping/scripts/__pycache__/
+**/__pycache__/
