@@ -26,6 +26,17 @@ prompt_token_budget: 24000
 trials_per_frontend: 10
 
 # Hard wall-clock cap per single trial.
+#
+# 600 s is fine for `provider: mock` (the deterministic fixtures complete
+# in seconds) but is FAR too tight for any reasoning-style real LLM. A
+# DeepSeek-V4-Pro / OpenAI-o1 / Anthropic-extended-thinking turn that
+# emits ~3k tokens of code typically chews 200–500 s of chat time, of
+# which 60–80% is hidden chain-of-thought (`reasoning_tokens`). With
+# fix_iterations=3 you should budget at least 3600 s here so all four
+# turns plus the dev/test sweeps fit; 600 s will silently cut the trial
+# short on the third or fourth fix iteration. The harness records a
+# clean `meta.json` either way, but the iterations beyond the cutoff
+# never happen.
 trial_timeout_seconds: 600
 
 # At most this many failing dev files are echoed back per fix iteration.
@@ -36,4 +47,10 @@ seed: 42
 
 # When provider != mock, you may also set:
 #   temperature: 0.0
-#   max_tokens: 8192
+#   max_tokens: 8192       # OK for a non-reasoning model.
+#                          # For DeepSeek-V4-Pro / o1 / Sonnet-thinking,
+#                          # raise this to 32768 — `completion_tokens`
+#                          # includes the chain-of-thought, and 8k–16k
+#                          # has empirically truncated mid-response,
+#                          # leaving `finish_reason: "length"` in
+#                          # conversation/turn_NN.usage.json.
