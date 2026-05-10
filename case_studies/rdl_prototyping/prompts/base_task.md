@@ -250,6 +250,59 @@ trial.
   `run.sh input.smt2 output.json` wrapper. The harness invokes
   `run.sh`.
 
+## Delivery format (read carefully)
+
+Each iteration you reply with **file blocks**, plus a short prose
+preamble if you like (≤ a few sentences). The harness extracts files
+and ignores the rest. Two equivalent forms are accepted — pick whichever
+you find most natural, the parser tolerates both. Paths are interpreted
+**relative to your run's `src/` directory**; do not prepend
+`case_studies/...` or `results/runs/...`.
+
+### Form A — XML-style (preferred for unambiguous parsing)
+
+```
+<file path="extract_rdl.py">
+#!/usr/bin/env python3
+import sys, json
+...
+</file>
+
+<file path="requirements.txt">
+pysmt==0.9.6
+</file>
+```
+
+### Form B — Markdown-fenced (also accepted)
+
+The **first** line inside the fence MUST be a comment of the form
+`# file: <path>` (or `// file: <path>` for C/C++/Java); without it the
+block is treated as ordinary documentation and discarded.
+
+````
+```python
+# file: extract_rdl.py
+#!/usr/bin/env python3
+import sys, json
+...
+```
+
+```text
+# file: requirements.txt
+pysmt==0.9.6
+```
+````
+
+Rules common to both forms:
+
+* One block per file. Multiple blocks for the same path overwrite in
+  source order (last one wins); avoid that if you can.
+* Do not emit absolute paths or `..` segments — they are rejected as
+  unsafe.
+* If you change nothing in a fix iteration, you may re-emit the whole
+  file unchanged so the harness records a no-op turn; sending an empty
+  response ends the trial.
+
 ## Out of scope for this trial
 
 A future iteration will extend the case study to Boolean RDL via a

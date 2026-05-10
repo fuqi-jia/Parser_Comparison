@@ -13,9 +13,24 @@ Two providers are supported:
 
 The client exposes a single method:
 
-    chat(messages: list[dict]) -> str
+    chat(messages: list[dict]) -> ChatResult
 
-where ``messages`` is the OpenAI-style ``[{role, content}, ...]`` list.
+where ``messages`` is the OpenAI-style ``[{role, content}, ...]`` list
+and ``ChatResult`` is a ``(content: str, usage: dict | None)`` tuple.
+``usage`` is provider-agnostic and is normalised by the client into:
+
+    {
+        "prompt_tokens":      int,
+        "completion_tokens":  int,
+        "reasoning_tokens":   int,   # 0 if the model is not a reasoning model
+        "cache_hit_tokens":   int,   # 0 if the provider does not expose it
+        "total_tokens":       int,
+        "raw":                <provider-specific dict, verbatim>,
+    }
+
+For the mock client (no network call, no real bill), ``usage`` is
+``None``; the harness records that explicitly so paper tables can
+distinguish "free" mock runs from real-LLM runs.
 
 Real-LLM providers will refuse to run unless the corresponding API key
 env var is set (so the harness fails fast on a misconfigured trial).
@@ -72,12 +87,77 @@ def load_config(path: Path) -> dict[str, Any]:
 # --------------------------------------------------------------------------
 # Abstract base.
 # --------------------------------------------------------------------------
+ChatResult = tuple[str, dict | None]
+
+
 class LLMClient(abc.ABC):
     name: str = "abstract"
 
     @abc.abstractmethod
-    def chat(self, messages: list[dict]) -> str:
+    def chat(self, messages: list[dict]) -> ChatResult:
+        """Return (content, usage_dict_or_None). See module docstring."""
         ...
+
+
+def _normalise_openai_usage(rsp) -> dict | None:
+    """Map an OpenAI ChatCompletion ``usage`` into the canonical dict.
+
+    Works for any OpenAI-compatible provider (DeepSeek, Together,
+    Fireworks, etc.) as long as they return the same field names. The
+    OpenAI ``finish_reason`` is folded in too — for reasoning models a
+    ``"length"`` finish silently truncates the answer mid-token, so the
+    harness needs that signal to warn the user.
+    """
+    u = getattr(rsp, "usage", None)
+    if u is None:
+        return None
+    raw = u.model_dump() if hasattr(u, "model_dump") else dict(u)
+    details = raw.get("completion_tokens_details") or {}
+    if isinstance(details, dict):
+        reasoning = details.get("reasoning_tokens") or 0
+    else:
+        reasoning = 0
+    finish_reason = None
+    try:
+        finish_reason = rsp.choices[0].finish_reason
+    except (AttributeError, IndexError):
+        finish_reason = None
+    return {
+        "prompt_tokens": raw.get("prompt_tokens", 0) or 0,
+        "completion_tokens": raw.get("completion_tokens", 0) or 0,
+        "reasoning_tokens": reasoning,
+        "cache_hit_tokens": raw.get("prompt_cache_hit_tokens", 0) or 0,
+        "total_tokens": raw.get("total_tokens", 0) or 0,
+        "finish_reason": finish_reason,
+        "raw": raw,
+    }
+
+
+def _normalise_anthropic_usage(rsp) -> dict | None:
+    u = getattr(rsp, "usage", None)
+    if u is None:
+        return None
+    inp = int(getattr(u, "input_tokens", 0) or 0)
+    out = int(getattr(u, "output_tokens", 0) or 0)
+    cache_hit = int(getattr(u, "cache_read_input_tokens", 0) or 0)
+    raw = {"input_tokens": inp, "output_tokens": out}
+    for fld in ("cache_creation_input_tokens", "cache_read_input_tokens"):
+        v = getattr(u, fld, None)
+        if v is not None:
+            raw[fld] = int(v)
+    # Anthropic uses stop_reason; "max_tokens" is the analog of OpenAI
+    # "length" truncation.
+    stop_reason = getattr(rsp, "stop_reason", None)
+    finish_reason = "length" if stop_reason == "max_tokens" else stop_reason
+    return {
+        "prompt_tokens": inp,
+        "completion_tokens": out,
+        "reasoning_tokens": 0,
+        "cache_hit_tokens": cache_hit,
+        "total_tokens": inp + out,
+        "finish_reason": finish_reason,
+        "raw": raw,
+    }
 
 
 # --------------------------------------------------------------------------
@@ -104,13 +184,16 @@ class MockClient(LLMClient):
             raise SystemExit(
                 f"mock fixture for frontend={frontend} missing: {self.frontend_dir}")
 
-    def chat(self, messages: list[dict]) -> str:
+    def chat(self, messages: list[dict]) -> ChatResult:
         turn = sum(1 for m in messages if m.get("role") == "assistant")
         candidate = self.frontend_dir / f"turn_{turn}.txt"
         if candidate.is_file():
-            return candidate.read_text(encoding="utf-8")
-        return ("[mock-llm] No more pre-recorded turns; returning empty "
-                "response so the trial harness terminates.")
+            return candidate.read_text(encoding="utf-8"), None
+        return (
+            "[mock-llm] No more pre-recorded turns; returning empty "
+            "response so the trial harness terminates.",
+            None,
+        )
 
 
 # --------------------------------------------------------------------------
@@ -134,14 +217,15 @@ class OpenAIClient(LLMClient):
         self._temperature = temperature
         self._max_tokens = max_tokens
 
-    def chat(self, messages: list[dict]) -> str:
+    def chat(self, messages: list[dict]) -> ChatResult:
         rsp = self._client.chat.completions.create(
             model=self._model,
             messages=messages,
             temperature=self._temperature,
             max_tokens=self._max_tokens,
         )
-        return rsp.choices[0].message.content or ""
+        content = rsp.choices[0].message.content or ""
+        return content, _normalise_openai_usage(rsp)
 
 
 class AnthropicClient(LLMClient):
@@ -162,7 +246,7 @@ class AnthropicClient(LLMClient):
         self._temperature = temperature
         self._max_tokens = max_tokens
 
-    def chat(self, messages: list[dict]) -> str:
+    def chat(self, messages: list[dict]) -> ChatResult:
         # Anthropic separates system from user messages.
         system_chunks = [m["content"] for m in messages if m.get("role") == "system"]
         user_msgs = [m for m in messages if m.get("role") != "system"]
@@ -173,8 +257,8 @@ class AnthropicClient(LLMClient):
             temperature=self._temperature,
             max_tokens=self._max_tokens,
         )
-        # Each content block is a TextBlock; concatenate.
-        return "".join(getattr(b, "text", "") for b in rsp.content)
+        content = "".join(getattr(b, "text", "") for b in rsp.content)
+        return content, _normalise_anthropic_usage(rsp)
 
 
 # --------------------------------------------------------------------------
@@ -213,23 +297,89 @@ def make_client(config: dict[str, Any], frontend: str, case_dir: Path) -> LLMCli
 # --------------------------------------------------------------------------
 # Helpers used by the trial harness.
 # --------------------------------------------------------------------------
+# Preferred format: ``<file path="rel/path"> ... </file>``.
 FILE_BLOCK_RE = re.compile(
     r'<file\s+path\s*=\s*"([^"\n]+)"\s*>\n(.*?)\n</file>',
     re.DOTALL,
 )
 
+# Tolerated fallback: a fenced code block whose FIRST content line is a
+# language-appropriate comment of the form ``# file: <path>`` or
+# ``// file: <path>``. Many models (DeepSeek-V4, Claude when in "show me
+# the code" mode, ChatGPT-4o) prefer this over XML tags, and forcing the
+# XML form would be a fairness hazard. We keep the parser tolerant so
+# the test does not measure prompt-compliance discipline.
+FENCE_BLOCK_RE = re.compile(
+    r"```(?P<lang>[a-zA-Z0-9_+-]*)\s*\n"          # opening fence
+    r"(?:#|//)\s*file\s*:\s*(?P<path>[^\n]+)\n"   # required first line
+    r"(?P<body>.*?)\n```",                          # body up to closing fence
+    re.DOTALL,
+)
+
+
+# When the LLM helpfully drops the file into the absolute trial path
+# (e.g. "case_studies/rdl_prototyping/results/runs/pysmt/run_NN/src/...")
+# we strip the prefix so it lands in turn_src/. The fairness model is
+# that *only* the basename relative to src/ is meaningful; the harness
+# decides where on disk that actually lives.
+def _normalise_emitted_path(p: str) -> str:
+    p = p.strip().strip("`'\"")
+    for marker in ("results/runs/", "src/turn_", "/src/"):
+        idx = p.find(marker)
+        if idx == -1:
+            continue
+        # find the segment AFTER ".../src/" or ".../src/turn_NN/"
+        tail = p[idx + len(marker):]
+        slash = tail.find("/")
+        if marker == "/src/":
+            return tail
+        if marker == "src/turn_":
+            # tail starts with "NN/<actual>"; chop the "NN/" prefix
+            slash2 = tail.find("/")
+            if slash2 != -1:
+                return tail[slash2 + 1:]
+        if marker == "results/runs/":
+            # tail looks like "<frontend>/run_NN/src/<actual>" or
+            # "<frontend>/run_NN/src/turn_NN/<actual>"; find /src/
+            j = tail.find("/src/")
+            if j != -1:
+                return _normalise_emitted_path(tail[j:])
+    return p
+
 
 def extract_files(response: str) -> list[tuple[str, str]]:
-    """Extract <file path="..."> ... </file> blocks from an LLM response.
+    """Extract file blocks from an LLM response.
 
-    Returns a list of (relpath, content) pairs, in source order.
-    Empty list if the response contains no file blocks (the harness then
+    Returns a list of (relpath, content) pairs, in source order. Both
+    the preferred ``<file path="...">`` XML form and the markdown-fence
+    fallback (``# file: <path>`` as the first content line of a fenced
+    code block) are accepted; XML matches win when both styles cover
+    overlapping ranges.
+
+    Empty list if no recognised blocks were found (the harness then
     treats the turn as "no progress" and stops the loop).
     """
-    out: list[tuple[str, str]] = []
+    found: list[tuple[int, str, str]] = []
     for m in FILE_BLOCK_RE.finditer(response):
-        out.append((m.group(1).strip(), m.group(2)))
-    return out
+        found.append((m.start(), m.group(1).strip(), m.group(2)))
+    # Avoid double-counting ranges that the XML matcher already claimed.
+    xml_ranges: list[tuple[int, int]] = [
+        (m.start(), m.end()) for m in FILE_BLOCK_RE.finditer(response)
+    ]
+
+    def in_xml(pos: int) -> bool:
+        return any(a <= pos < b for a, b in xml_ranges)
+
+    for m in FENCE_BLOCK_RE.finditer(response):
+        if in_xml(m.start()):
+            continue
+        path = _normalise_emitted_path(m.group("path"))
+        if not path:
+            continue
+        found.append((m.start(), path, m.group("body")))
+
+    found.sort(key=lambda t: t[0])
+    return [(p, b) for _, p, b in found]
 
 
 def approx_token_count(text: str) -> int:
@@ -254,9 +404,10 @@ if __name__ == "__main__":
         case_dir = cfg_path.resolve().parent.parent
         client = make_client(cfg, "pysmt", case_dir)
         print(f"client = {client.name}")
-        rsp = client.chat([{"role": "user", "content": "hi"}])
-        print(f"first 200 chars of response: {rsp[:200]!r}")
-        files = extract_files(rsp)
+        content, usage = client.chat([{"role": "user", "content": "hi"}])
+        print(f"first 200 chars of response: {content[:200]!r}")
+        print(f"usage: {usage}")
+        files = extract_files(content)
         print(f"file blocks: {[name for name, _ in files]}")
         sys.exit(0)
     print("llm_client is a library; use --smoke to test the mock route.",

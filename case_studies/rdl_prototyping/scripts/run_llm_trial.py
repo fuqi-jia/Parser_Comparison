@@ -10,6 +10,7 @@ The trial creates an immutable per-run directory tree:
 
     results/runs/<frontend>/<run_name>/
         meta.json                          # configuration + final summary
+                                           # (incl. tokens_total + per-turn usage)
         prompt/                            # prompt bundle, hashed
             bundle.md                      # full text concatenated
             bundle.sha256
@@ -17,6 +18,7 @@ The trial creates an immutable per-run directory tree:
         conversation/
             turn_00.user.md
             turn_00.assistant.md
+            turn_00.usage.json             # token usage + wall time for this turn
             turn_01.user.md ...            # ≤ K+1 turns
         src/turn_00/                       # adapter code as written by LLM
         audit/turn_00/audit_report.json
@@ -513,10 +515,15 @@ def run_trial(args) -> int:
 
     system_msg = (
         f"You are an expert SMT-LIB / RDL implementer. You will write a "
-        f"single front-end adapter for the '{args.frontend}' slot. Follow the "
-        f"fairness rules strictly. Respond with file blocks of the form "
-        f"<file path=\"relpath\"> ... </file>. Only respond with file blocks "
-        f"and brief explanatory prose."
+        f"single front-end adapter for the '{args.frontend}' slot. Follow "
+        f"the fairness rules strictly. Respond with the adapter source code "
+        f"as either <file path=\"relpath\"> ... </file> XML blocks OR "
+        f"markdown-fenced code blocks whose first content line is "
+        f"`# file: relpath` (or `// file: relpath` for C/C++/Java). Paths "
+        f"are RELATIVE to the run's src/ directory; never prepend "
+        f"`case_studies/`, `results/`, or absolute paths. Brief explanatory "
+        f"prose is fine; everything outside recognised file blocks is "
+        f"ignored."
     )
     messages = [
         {"role": "system", "content": system_msg},
@@ -525,13 +532,25 @@ def run_trial(args) -> int:
     write_immutable(run_dir / "conversation" / "turn_00.user.md", bundle)
 
     started_at = time.time()
+    tokens_total = {
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "reasoning_tokens": 0,
+        "cache_hit_tokens": 0,
+        "total_tokens": 0,
+        "chat_seconds": 0.0,
+        "n_chat_calls": 0,
+        "n_chat_calls_with_usage": 0,
+    }
     final_summary: dict[str, Any] = {
         "frontend": args.frontend,
         "run_name": args.run_name,
         "config": str(cfg_path.relative_to(case_dir)) if cfg_path.is_relative_to(case_dir) else str(cfg_path),
         "provider": cfg.get("provider", "mock"),
+        "model": cfg.get("model", ""),
         "started_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
         "iterations": [],
+        "tokens_total": tokens_total,
         "first_pass_success": False,
         "iterations_to_success": None,
     }
@@ -543,9 +562,42 @@ def run_trial(args) -> int:
             break
 
         # 1. Get assistant response.
-        assistant = client.chat(messages)
+        chat_t0 = time.time()
+        assistant, usage = client.chat(messages)
+        chat_seconds = time.time() - chat_t0
         write_immutable(run_dir / "conversation" / f"turn_{turn:02d}.assistant.md",
                         assistant)
+        # Per-turn usage record — always written so paper tables can
+        # tell mock turns (usage=null) from real-LLM turns.
+        usage_record = {
+            "turn": turn,
+            "provider": cfg.get("provider", "mock"),
+            "model": cfg.get("model", ""),
+            "chat_seconds": chat_seconds,
+            "usage": usage,
+            "response_chars": len(assistant),
+            "response_approx_tokens": approx_token_count(assistant),
+            "messages_chars_in": sum(len(m.get("content", "")) for m in messages),
+        }
+        write_immutable(run_dir / "conversation" / f"turn_{turn:02d}.usage.json",
+                        json.dumps(usage_record, indent=2, sort_keys=True))
+        tokens_total["chat_seconds"] += chat_seconds
+        tokens_total["n_chat_calls"] += 1
+        if usage is not None:
+            tokens_total["n_chat_calls_with_usage"] += 1
+            for k in ("prompt_tokens", "completion_tokens",
+                      "reasoning_tokens", "cache_hit_tokens", "total_tokens"):
+                tokens_total[k] += int(usage.get(k, 0) or 0)
+            # Length-truncation on a reasoning model means the chain-of-
+            # thought ate the whole budget; flag it loudly so the user
+            # bumps max_tokens before paying for another full campaign.
+            if usage.get("finish_reason") == "length":
+                print(f"[trial] WARNING: turn {turn} response was truncated "
+                      f"(finish_reason='length'); raise max_tokens in llm.yaml "
+                      f"and re-run. response_chars={len(assistant)}, "
+                      f"completion_tokens={usage.get('completion_tokens')} "
+                      f"(of which reasoning_tokens="
+                      f"{usage.get('reasoning_tokens')})", file=sys.stderr)
         messages.append({"role": "assistant", "content": assistant})
 
         # 2. Materialise file blocks.
@@ -559,9 +611,15 @@ def run_trial(args) -> int:
         if not written:
             print(f"[trial] turn {turn}: no file blocks in response; stopping",
                   file=sys.stderr)
-            final_summary["iterations"].append(
-                {"turn": turn, "build_ok": False, "audit": None,
-                 "dev_summary": None, "note": "no file blocks emitted"})
+            final_summary["iterations"].append({
+                "turn": turn,
+                "build_ok": False,
+                "audit": None,
+                "dev_summary": None,
+                "note": "no file blocks emitted",
+                "chat_seconds": chat_seconds,
+                "usage": usage,
+            })
             break
 
         # 3. Static audit.
@@ -616,6 +674,8 @@ def run_trial(args) -> int:
             "audit_n_block": audit_report.get("n_block", 0),
             "audit_n_warn": audit_report.get("n_warn", 0),
             "dev_summary": dev_result["summary"] if dev_result else None,
+            "chat_seconds": chat_seconds,
+            "usage": usage,
         })
 
         if succeeded:
