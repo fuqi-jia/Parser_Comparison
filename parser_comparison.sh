@@ -73,6 +73,15 @@ usage() {
           Example:
             ./parser_comparison.sh dual-path --file-list results/file_list.txt --preset sat2026
 
+      somt-experiments | somt-only
+          Run only SOMTParser-side experiments (no other parser drivers): multi-parser benchmark with
+          --only-parser native (forced last), then roundtrip, then robustness summary. Does not run
+          parse-vs-solve, dual-path, or build-external. Extra args are passed to benchmark and roundtrip
+          (same flags as those commands, e.g. --file-list, --preset sat2026, -j). Robustness uses default
+          results/parser_benchmark_table.csv unless you re-run: ./parser_comparison.sh robustness --benchmark-csv ...
+          Example:
+            ./parser_comparison.sh somt-experiments --file-list results/file_list.txt --preset sat2026
+
       sampled
           One-shot sampled pipeline (sample → bench → recheck → summary → LaTeX).
           Same as: ./scripts/run_sampled_full.sh ...
@@ -178,6 +187,12 @@ case "${CMD}" in
         ;;
     dual-path|dual_path|native-z3-dual-path|native_z3_dual_path)
         exec python3 "${SCRIPTS}/run_native_z3_dual_path_benchmark.py" "$@"
+        ;;
+    somt-experiments|somt-only)
+        echo "== SOMTParser-only: benchmark (native) → roundtrip → robustness ==" >&2
+        python3 "${SCRIPTS}/run_parser_benchmark.py" "$@" --only-parser native
+        python3 "${SCRIPTS}/run_roundtrip_benchmark.py" "$@"
+        python3 "${SCRIPTS}/summarize_robustness.py"
         ;;
     sampled)
         exec bash "${SCRIPTS}/run_sampled_full.sh" "$@"
