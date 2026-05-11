@@ -6,9 +6,9 @@ Two experimental settings are common in front-end work: **(A) same-engine parse 
 
 | Status | Count | Share |
 | --- | ---: | ---: |
-| `ok` | 149758 | 92.4518% |
-| `timeout` | 10885 | 6.7198% |
-| `mismatch` | 1338 | 0.8260% |
+| `ok` | 149744 | 92.4431% |
+| `timeout` | 10907 | 6.7333% |
+| `mismatch` | 1330 | 0.8211% |
 | `fail` | 4 | 0.0025% |
 
 ### By theory family
@@ -16,10 +16,11 @@ Two experimental settings are common in front-end work: **(A) same-engine parse 
 | Theory | ok | mismatch | fail | timeout | other | total |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | QF_AX | 454 | 97 | 0 | 0 | 0 | 551 |
-| QF_BV | 36888 | 1216 | 4 | 8083 | 0 | 46191 |
+| QF_BV | 36879 | 1208 | 4 | 8100 | 0 | 46191 |
 | QF_FP | 40381 | 25 | 0 | 0 | 0 | 40406 |
-| QF_LIA | 10511 | 0 | 0 | 2795 | 0 | 13306 |
+| QF_LIA | 10506 | 0 | 0 | 2800 | 0 | 13306 |
 | QF_LRA | 1749 | 0 | 0 | 4 | 0 | 1753 |
 | QF_NIA | 25452 | 0 | 0 | 0 | 0 | 25452 |
 | QF_NRA | 12151 | 0 | 0 | 3 | 0 | 12154 |
 | QF_S | 22172 | 0 | 0 | 0 | 0 | 22172 |
+
