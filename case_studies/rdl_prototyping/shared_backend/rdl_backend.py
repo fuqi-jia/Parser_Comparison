@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Shared RDL backend for the front-end-prototyping case study.
+"""Shared RDL backend — reference specification.
+
+⚠  v2 NOTE  ⚠
+This Python file is the executable *specification* for the shared
+backend's semantics. The trial harness no longer calls it directly:
+``scripts/run_llm_trial.py`` instead invokes the compiled C++ binary at
+``shared_backend/cpp/build/rdl_backend``, which produces byte-identical
+verdicts. The two implementations are pinned to agree on every payload
+by ``scripts/test_backend.py`` over the 100 instances under
+``data/synth/``. Edit this file only as a semantics change; the C++
+side must then be updated in lock-step, and the self-test re-run.
 
 The backend is intentionally tiny and self-contained so that every adapter is
 compared against exactly the same RDL semantics and the same negative-cycle

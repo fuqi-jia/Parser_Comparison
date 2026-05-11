@@ -242,6 +242,7 @@ results/native_z3_dual_path/native_z3_dual_path_table.csv
 case_studies/rdl_prototyping/data/qf_rdl_raw/
 case_studies/rdl_prototyping/data/dev/
 case_studies/rdl_prototyping/data/test/
+case_studies/rdl_prototyping/data/synth/
 case_studies/rdl_prototyping/data/qf_rdl_index.csv
 case_studies/rdl_prototyping/data/dev_index.csv
 case_studies/rdl_prototyping/data/test_index.csv
@@ -251,4 +252,5 @@ case_studies/rdl_prototyping/results/runs/
 case_studies/rdl_prototyping/results/aggregate/
 case_studies/rdl_prototyping/config/llm.yaml
 case_studies/rdl_prototyping/scripts/__pycache__/
+case_studies/rdl_prototyping/shared_backend/cpp/build/
 **/__pycache__/

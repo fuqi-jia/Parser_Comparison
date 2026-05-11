@@ -549,13 +549,18 @@ def adapter_argv(src_dir: Path, build_log_dir: Path,
 # --------------------------------------------------------------------------
 def run_set(src_dir: Path, build_log_dir: Path, dataset_dir: Path,
             index_csv: Path, out_root: Path, label: str,
-            backend_script: Path,
+            backend_bin: Path,
             deps: dict[str, str] | None = None) -> dict:
     """Run the adapter on every file in `index_csv` and grade against `status`.
 
     ``deps`` is threaded into the adapter's subprocess env so the
     binary/Python/Java entry point can dlopen vendored ``libz3.so`` /
     ``libsmt-switch.so`` / read ``$SOMTPARSER_ROOT`` at run time.
+
+    ``backend_bin`` is the path to the C++ shared backend binary; we call
+    it with a single positional arg (the path to the adapter's emitted
+    ``rdl_atoms.json``) and read sat/unsat/unknown from stdout. See
+    shared_backend/cpp/ for the implementation.
     """
     out_root.mkdir(parents=True, exist_ok=True)
     adapter_out = out_root / "adapter_out"
@@ -588,7 +593,7 @@ def run_set(src_dir: Path, build_log_dir: Path, dataset_dir: Path,
                     verdict = "adapter_error"
                 else:
                     p2 = subprocess.run(
-                        [sys.executable, str(backend_script), str(out_json)],
+                        [str(backend_bin), str(out_json)],
                         capture_output=True, text=True, timeout=120,
                     )
                     verdict = (p2.stdout.strip().splitlines() or [""])[-1] or "backend_error"
@@ -712,9 +717,17 @@ def run_trial(args) -> int:
     bundle_tokens = approx_token_count(bundle)
     client = make_client(cfg, args.frontend, case_dir)
 
-    backend_script = case_dir / "shared_backend" / "rdl_backend.py"
-    if not backend_script.is_file():
-        raise SystemExit(f"shared backend missing: {backend_script}")
+    # Shared backend (v2): C++ binary built once from shared_backend/cpp/.
+    # The Python reference at shared_backend/rdl_backend.py is kept as a
+    # spec, but the trial harness exclusively calls the compiled C++ binary
+    # so verdicts are byte-for-byte deterministic across runs / machines.
+    backend_bin = case_dir / "shared_backend" / "cpp" / "build" / "rdl_backend"
+    if not backend_bin.is_file():
+        raise SystemExit(
+            f"shared backend C++ binary missing at {backend_bin}.\n"
+            f"Build it once with: bash {backend_bin.parent.parent}/build.sh"
+        )
+    backend_sha256 = hashlib.sha256(backend_bin.read_bytes()).hexdigest()
 
     # Discover vendored parser dependencies in repo. These are then
     # injected into every cmake configure (-D<KEY>=<PATH>) and every
@@ -776,6 +789,9 @@ def run_trial(args) -> int:
         "first_pass_success": False,
         "iterations_to_success": None,
         "vendored_deps": deps,
+        "backend_path": str(backend_bin.relative_to(case_dir))
+                        if backend_bin.is_relative_to(case_dir) else str(backend_bin),
+        "backend_sha256": backend_sha256,
     }
 
     succeeded = False
@@ -878,7 +894,7 @@ def run_trial(args) -> int:
                 index_csv=case_dir / "data" / "dev_index.csv",
                 out_root=run_dir / "dev" / f"turn_{turn:02d}",
                 label="dev",
-                backend_script=backend_script,
+                backend_bin=backend_bin,
                 deps=deps,
             )
             if dev_result["summary"]["wrong"] == 0 and \
@@ -937,7 +953,7 @@ def run_trial(args) -> int:
             index_csv=case_dir / "data" / "test_index.csv",
             out_root=run_dir / "final_test",
             label="test",
-            backend_script=backend_script,
+            backend_bin=backend_bin,
             deps=deps,
         )
         final_summary["final_test_summary"] = test_result["summary"]

@@ -7,12 +7,32 @@ how many real LLM runs we end up reporting.
 
 ## What v2 delivers
 
-* **A shared Python RDL backend**
-  ([`shared_backend/rdl_backend.py`](shared_backend/rdl_backend.py)) that
-  takes a normalised `rdl_atoms.json` payload and returns
-  `sat / unsat / unknown`. Strict inequalities are tracked symbolically;
-  the verdict is decided by Floyd–Warshall negative-cycle detection over
-  a graph of difference constraints.
+* **A shared RDL backend, in two implementations that must agree.**
+  The paper-grade implementation is C++ (GMP + Floyd–Warshall over
+  symbolic strict bounds) at [`shared_backend/cpp/`](shared_backend/cpp/);
+  the trial harness exclusively calls the compiled binary
+  `shared_backend/cpp/build/rdl_backend`. The Python file
+  [`shared_backend/rdl_backend.py`](shared_backend/rdl_backend.py) is
+  kept as an executable *reference specification* (~240 LoC) and is the
+  source of truth for the semantics. Strict inequalities are tracked
+  symbolically as `(value, strict)` pairs; the verdict is decided by
+  Floyd–Warshall negative-cycle detection over a graph of difference
+  constraints. The two backends must produce identical verdicts on
+  every payload — [`scripts/test_backend.py`](scripts/test_backend.py)
+  enforces this on a built-in 100-instance self-test set (see next
+  bullet) and the harness records both the binary path and its SHA-256
+  in every trial's `meta.json`.
+* **A 100-instance self-test set.**
+  [`scripts/gen_synth_rdl.py`](scripts/gen_synth_rdl.py) generates 100
+  conjunction-only QF_RDL instances under
+  [`data/synth/`](data/synth/) (5 difficulty buckets:
+  tiny / small / medium / large / edge; sat ≈ unsat) along with a
+  hand-constructed ground-truth label per instance. The label is
+  produced *by construction* (sat: realised by a concrete assignment;
+  unsat: built around an injected negative cycle), so it never depends
+  on any solver. The self-test script then requires three-way
+  agreement (Python ref / C++ binary / `.expect`) on all 100; this is
+  the gate that catches regressions in either backend.
 * **A real benchmark.** The QF_RDL division of SMT-LIB (255 files, six
   families) is unpacked from `benchmark/QF_RDL.tar.zst` and split into a
   30-file dev set and a 123-file test set with `seed=42`, stratified by
@@ -137,8 +157,15 @@ the trial dirs exist.
 
 ## File / line index for paper writing
 
-* Backend semantics:
-  [`shared_backend/rdl_backend.py`](shared_backend/rdl_backend.py).
+* Backend (paper-grade): [`shared_backend/cpp/src/`](shared_backend/cpp/src/)
+  — entry point `rdl_backend.cpp`; decision in `rdl_solver.cpp`;
+  symbolic bounds in `rdl_bound.{hpp,cpp}`; tiny JSON parser in
+  `rdl_payload.cpp`. Build: [`shared_backend/cpp/build.sh`](shared_backend/cpp/build.sh).
+  Unit tests: `tests/unit_bound.cpp` + `tests/unit_solver.cpp`,
+  invoked by `ctest` inside `build.sh`.
+* Backend (reference spec): [`shared_backend/rdl_backend.py`](shared_backend/rdl_backend.py).
+* Backend self-test: [`scripts/test_backend.py`](scripts/test_backend.py)
+  on [`data/synth/`](data/synth/) (gates: 100/100 three-way agreement).
 * Schema: [`schema/rdl_atoms.schema.json`](schema/rdl_atoms.schema.json).
 * Fairness contract:
   [`prompts/fairness_rules.md`](prompts/fairness_rules.md).
