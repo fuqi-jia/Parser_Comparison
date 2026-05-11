@@ -123,7 +123,11 @@ def build_prompt_bundle(case_dir: Path, frontend: str) -> tuple[str, list[str]]:
     base = case_dir / "prompts" / "base_task.md"
     fairness = case_dir / "prompts" / "fairness_rules.md"
     api = case_dir / "prompts" / "api_excerpts" / f"{frontend}.md"
-    perfront = case_dir / "prompts" / f"{frontend if frontend != 'z3_cpp' else 'z3'}_adapter_prompt.md"
+    prompt_stem = {
+        "z3_cpp": "z3",
+        "cvc5_cpp": "cvc5",
+    }.get(frontend, frontend)
+    perfront = case_dir / "prompts" / f"{prompt_stem}_adapter_prompt.md"
     if not perfront.is_file():
         # tolerate the alternative naming.
         perfront = case_dir / "prompts" / f"{frontend}_adapter_prompt.md"
