@@ -1,0 +1,298 @@
+Acknowledged. Below is a minimal first-pass jsmtlib adapter that focuses on the
+conjunction-only QF_RDL fragment described in `base_task.md` and uses
+only the stdlib so the trial harness does not need to provision a
+pySMT install for this initial submission. (A pySMT-based version can
+be supplied in a fix iteration if the harness reports that the stdlib
+walker is too brittle on the larger dev files.)
+
+The strategy:
+
+1. Tokenise the file into balanced S-expressions.
+2. Extract every top-level `(declare-fun NAME () Real)` to track which
+   symbols are real-valued.
+3. Walk every assertion body, flattening top-level `and` connectives
+   and recognising the QF_RDL atom shapes
+   `(<= (- a b) c)`, `(<  …)`, `(>= …)`, `(>  …)`, `(= …)`, plus the
+   unary forms `(<= a c)`, `(>= a c)`, `(= a c)` mapped via `ZERO`.
+4. Emit `status=unsupported` with a truthful `reason` for anything else.
+
+<file path="extract_rdl.py">
+#!/usr/bin/env python3
+"""Mock-LLM v1 RDL adapter for the jsmtlib slot.
+
+Parses a fragment of QF_RDL with only stdlib so the trial harness can
+self-check end-to-end without pulling in pySMT. A future fix iteration
+will replace the home-grown walker with `pysmt.smtlib.parser.SmtLibParser`.
+"""
+from __future__ import annotations
+import json
+import sys
+from fractions import Fraction
+from typing import Any, List, Tuple, Union
+
+FRONTEND = "jsmtlib"
+SExpr = Union[str, List["SExpr"]]
+
+
+def tokenize(src: str) -> list[str]:
+    out: list[str] = []
+    i, n = 0, len(src)
+    while i < n:
+        ch = src[i]
+        if ch in " \t\r\n":
+            i += 1
+            continue
+        if ch == ";":
+            while i < n and src[i] != "\n":
+                i += 1
+            continue
+        if ch == "|":
+            j = src.find("|", i + 1)
+            if j == -1:
+                raise ValueError("unterminated quoted symbol")
+            out.append(src[i:j+1])
+            i = j + 1
+            continue
+        if ch == '"':
+            j = i + 1
+            while j < n and src[j] != '"':
+                j += 1
+            out.append(src[i:j+1])
+            i = j + 1
+            continue
+        if ch in "()":
+            out.append(ch)
+            i += 1
+            continue
+        j = i
+        while j < n and src[j] not in " \t\r\n();|\"":
+            j += 1
+        out.append(src[i:j])
+        i = j
+    return out
+
+
+def parse_sexprs(tokens: list[str]) -> list[SExpr]:
+    pos = 0
+
+    def parse_one() -> SExpr:
+        nonlocal pos
+        tok = tokens[pos]
+        pos += 1
+        if tok == "(":
+            children: list[SExpr] = []
+            while pos < len(tokens) and tokens[pos] != ")":
+                children.append(parse_one())
+            if pos >= len(tokens):
+                raise ValueError("unbalanced (")
+            pos += 1
+            return children
+        if tok == ")":
+            raise ValueError("unexpected )")
+        return tok
+
+    out: list[SExpr] = []
+    while pos < len(tokens):
+        out.append(parse_one())
+    return out
+
+
+def is_atom(e: SExpr) -> bool:
+    return isinstance(e, str)
+
+
+def head(e: SExpr) -> str | None:
+    if isinstance(e, list) and e and isinstance(e[0], str):
+        return e[0]
+    return None
+
+
+def parse_numeral(e: SExpr) -> Fraction:
+    """Convert an SMT-LIB numeric subtree into an exact Fraction."""
+    if isinstance(e, str):
+        try:
+            return Fraction(e)
+        except (ValueError, ArithmeticError):
+            if "." in e:
+                return Fraction(e)
+            raise
+    if head(e) == "-" and len(e) == 2:
+        return -parse_numeral(e[1])
+    if head(e) == "/" and len(e) == 3:
+        return parse_numeral(e[1]) / parse_numeral(e[2])
+    raise ValueError(f"not a numeral: {e!r}")
+
+
+def fmt_fraction(q: Fraction) -> str:
+    if q.denominator == 1:
+        return str(q.numerator)
+    return f"{q.numerator}/{q.denominator}"
+
+
+def render(e: SExpr) -> str:
+    if isinstance(e, str):
+        return e
+    return "(" + " ".join(render(c) for c in e) + ")"
+
+
+def parse_diff(e: SExpr) -> Tuple[str, str] | None:
+    """Return (lhs_var, rhs_var) if `e` is `(- a b)` / `(+ a (- 0 b))` / etc."""
+    if head(e) == "-" and len(e) == 3 and is_atom(e[1]) and is_atom(e[2]):
+        return e[1], e[2]
+    if head(e) == "+" and len(e) == 3:
+        a, b = e[1], e[2]
+        if is_atom(a) and head(b) == "-" and len(b) == 2 and is_atom(b[1]):
+            return a, b[1]
+        if is_atom(a) and head(b) == "*" and len(b) == 3:
+            sign = b[1]
+            term = b[2]
+            try:
+                if parse_numeral(sign) == -1 and is_atom(term):
+                    return a, term
+            except ValueError:
+                pass
+    return None
+
+
+def normalise_atom(e: SExpr, variables: set[str], constraints: list[dict],
+                   reason: list[str]) -> bool:
+    op = head(e)
+    if op not in {"<=", "<", ">=", ">", "="}:
+        reason.append(f"non-RDL operator: {op!r}")
+        return False
+    if len(e) != 3:
+        reason.append(f"non-binary {op!r}")
+        return False
+    lhs_expr, rhs_expr = e[1], e[2]
+
+    diff = parse_diff(lhs_expr)
+    if diff is not None:
+        lhs_var, rhs_var = diff
+    elif is_atom(lhs_expr):
+        lhs_var, rhs_var = lhs_expr, "ZERO"
+    else:
+        reason.append(f"unsupported lhs shape: {render(lhs_expr)}")
+        return False
+
+    try:
+        bound_q = parse_numeral(rhs_expr)
+    except ValueError:
+        reason.append(f"unsupported numeral: {render(rhs_expr)}")
+        return False
+
+    variables.add(lhs_var)
+    variables.add(rhs_var)
+    src = render(e)
+
+    if op == "<=":
+        constraints.append({"lhs": lhs_var, "rhs": rhs_var,
+                            "bound": fmt_fraction(bound_q),
+                            "strict": False, "source": src})
+    elif op == "<":
+        constraints.append({"lhs": lhs_var, "rhs": rhs_var,
+                            "bound": fmt_fraction(bound_q),
+                            "strict": True, "source": src})
+    elif op == ">=":
+        constraints.append({"lhs": rhs_var, "rhs": lhs_var,
+                            "bound": fmt_fraction(-bound_q),
+                            "strict": False, "source": src})
+    elif op == ">":
+        constraints.append({"lhs": rhs_var, "rhs": lhs_var,
+                            "bound": fmt_fraction(-bound_q),
+                            "strict": True, "source": src})
+    elif op == "=":
+        constraints.append({"lhs": lhs_var, "rhs": rhs_var,
+                            "bound": fmt_fraction(bound_q),
+                            "strict": False, "source": src})
+        constraints.append({"lhs": rhs_var, "rhs": lhs_var,
+                            "bound": fmt_fraction(-bound_q),
+                            "strict": False, "source": src})
+    return True
+
+
+def walk_assertion(e: SExpr, variables: set[str], constraints: list[dict],
+                   reason: list[str]) -> bool:
+    if head(e) == "and":
+        for child in e[1:]:
+            if not walk_assertion(child, variables, constraints, reason):
+                return False
+        return True
+    return normalise_atom(e, variables, constraints, reason)
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 3:
+        print("usage: extract_rdl.py input.smt2 output.json", file=sys.stderr)
+        return 2
+    in_path, out_path = argv[1], argv[2]
+    with open(in_path, "r", encoding="utf-8") as f:
+        src = f.read()
+    try:
+        commands = parse_sexprs(tokenize(src))
+    except ValueError as e:
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump({"status": "error", "frontend": FRONTEND,
+                       "reason": "parse failed", "detail": str(e)}, f)
+        return 0
+
+    variables: set[str] = set()
+    constraints: list[dict] = []
+    reason: list[str] = []
+    real_decls: set[str] = set()
+    seen_logic = False
+    accepted = True
+    for cmd in commands:
+        h = head(cmd)
+        if h == "set-logic" and len(cmd) == 2 and is_atom(cmd[1]):
+            seen_logic = True
+            if cmd[1] not in {"QF_RDL", "QF_LRA", "QF_IDL", "ALL"}:
+                accepted = False
+                reason.append(f"unsupported logic {cmd[1]}")
+        elif h in {"declare-fun", "declare-const"} and len(cmd) >= 3:
+            name = cmd[1] if is_atom(cmd[1]) else None
+            sort = cmd[-1]
+            if name and is_atom(sort) and sort != "Real":
+                accepted = False
+                reason.append(f"non-real declaration {name}:{sort}")
+            elif name:
+                real_decls.add(name)
+        elif h == "assert" and len(cmd) == 2:
+            ok = walk_assertion(cmd[1], variables, constraints, reason)
+            if not ok:
+                accepted = False
+        elif h in {None, "set-info", "set-option", "check-sat", "exit",
+                   "push", "pop", "echo", "get-info", "get-option"}:
+            continue
+        else:
+            accepted = False
+            reason.append(f"unsupported top-level command: {h!r}")
+
+    if not accepted:
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump({"status": "unsupported", "frontend": FRONTEND,
+                       "reason": "; ".join(reason) or "out of fragment"}, f)
+        return 0
+
+    out = {
+        "status": "ok",
+        "frontend": FRONTEND,
+        "mode": "conjunction",
+        "variables": sorted(variables),
+        "constraints": constraints,
+    }
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(out, f)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))
+</file>
+
+<file path="requirements.txt">
+# stdlib only for this initial submission
+</file>
+
+That's the first pass. Please run the harness against `data/dev/`; if any
+file fails, share the per-file diff and I will switch the walker to the
+real `pysmt.smtlib.parser.SmtLibParser` AST.
