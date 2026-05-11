@@ -226,15 +226,84 @@ def detect_invocation(src_dir: Path) -> tuple[str, list[str]] | None:
     return None
 
 
+def diagnose_missing_entry(src_dir: Path) -> str:
+    """Return a descriptive build-error message for the LLM when no
+    invocation can be detected in ``src_dir``. The message must be
+    actionable so the LLM can self-correct on the next iteration."""
+    files = sorted(
+        p.relative_to(src_dir).as_posix()
+        for p in src_dir.rglob("*") if p.is_file()
+    )
+    if not files:
+        return (
+            "ERROR: no files were emitted to src/. The LLM response "
+            "contained no recognised file blocks. Please reply using "
+            "either <file path=\"relpath\"> ... </file> XML blocks OR "
+            "markdown-fenced code blocks whose first line is "
+            "`# file: relpath` (or `// file: relpath` for C/C++/Java).\n"
+        )
+    has_main = (src_dir / "main.cpp").is_file()
+    has_cmake = (src_dir / "CMakeLists.txt").is_file()
+    if has_main and not has_cmake:
+        return (
+            "ERROR: src/ contains main.cpp but no CMakeLists.txt; the "
+            "C++ harness requires BOTH files (the harness runs "
+            "`cmake -S src -B build && cmake --build build -j`). Please "
+            "re-emit a CMakeLists.txt that compiles main.cpp and links "
+            "against the parser library you chose. Hint: on this "
+            "machine libz3.so and libcvc5.so / libcvc5parser.so are "
+            "available system-wide via the linker, but Z3Config.cmake "
+            "is NOT installed, so prefer "
+            "`find_library(Z3_LIB z3)` over "
+            "`find_package(Z3 CONFIG REQUIRED)`.\n"
+            f"Files currently in src/: {files}\n"
+        )
+    if has_cmake and not has_main:
+        return (
+            "ERROR: src/ contains CMakeLists.txt but no main.cpp. "
+            "Please re-emit the C++ source file referenced by your "
+            "CMakeLists.txt.\n"
+            f"Files currently in src/: {files}\n"
+        )
+    java_files = [f for f in files if f.endswith(".java")]
+    if java_files and not (src_dir / "build.sh").is_file():
+        return (
+            f"ERROR: src/ contains Java sources ({java_files}) but no "
+            "build.sh. Please ship build.sh that compiles the Java "
+            "code (e.g. `javac -d classes *.java`) and run.sh that "
+            "invokes the adapter with `java ... \"$@\"`.\n"
+            f"Files currently in src/: {files}\n"
+        )
+    if java_files and not (src_dir / "run.sh").is_file():
+        return (
+            f"ERROR: src/ contains Java sources ({java_files}) and "
+            "build.sh but no run.sh. Please ship a run.sh that takes "
+            "`input.smt2 output.json` arguments and invokes the "
+            "compiled Java entry class.\n"
+            f"Files currently in src/: {files}\n"
+        )
+    return (
+        "ERROR: no recognised adapter entry point in src/.\n"
+        "Expected one of:\n"
+        "  * extract_rdl.py            (python path; "
+        "harness runs `python3 extract_rdl.py IN OUT`)\n"
+        "  * run.sh                    (shell path; "
+        "build.sh optional, harness runs `bash run.sh IN OUT`)\n"
+        "  * CMakeLists.txt + main.cpp (C++ path; "
+        "harness runs cmake configure/build then exec the binary)\n"
+        f"Files currently in src/: {files}\n"
+    )
+
+
 def build_adapter(src_dir: Path, build_log_dir: Path) -> tuple[bool, str]:
     """Configure & build the adapter if it is C++. Returns (ok, log_text)."""
     build_log_dir.mkdir(parents=True, exist_ok=True)
     log_path = build_log_dir / "build.log"
     invoc = detect_invocation(src_dir)
     if invoc is None:
-        log_path.write_text("ERROR: no recognised adapter entry point in src/\n",
-                            encoding="utf-8")
-        return False, log_path.read_text(encoding="utf-8")
+        msg = diagnose_missing_entry(src_dir)
+        log_path.write_text(msg, encoding="utf-8")
+        return False, msg
     kind, _argv = invoc
     if kind in ("python", "shell"):
         # Try to chmod +x build.sh / run.sh if present (best-effort).
@@ -498,10 +567,21 @@ def run_trial(args) -> int:
     run_dir = case_dir / "results" / "runs" / args.frontend / args.run_name
     if run_dir.exists():
         raise SystemExit(f"run dir already exists: {run_dir}")
-    ensure_run_dirs(run_dir)
 
+    # Pre-flight: build the prompt bundle and instantiate the client
+    # BEFORE creating run_dir. Both can raise (e.g. missing prompt file,
+    # missing API key), and we do not want a half-empty run_NN/ directory
+    # littering results/runs/ when they do.
     bundle, sources = build_prompt_bundle(case_dir, args.frontend)
     bundle_tokens = approx_token_count(bundle)
+    client = make_client(cfg, args.frontend, case_dir)
+
+    backend_script = case_dir / "shared_backend" / "rdl_backend.py"
+    if not backend_script.is_file():
+        raise SystemExit(f"shared backend missing: {backend_script}")
+
+    # All preconditions ok → commit to creating run_dir.
+    ensure_run_dirs(run_dir)
     write_immutable(run_dir / "prompt" / "bundle.md", bundle)
     write_immutable(run_dir / "prompt" / "bundle.sha256",
                     sha256_text(bundle) + "\n")
@@ -510,12 +590,6 @@ def run_trial(args) -> int:
     if bundle_tokens > budget:
         print(f"WARNING: bundle ~{bundle_tokens} tokens exceeds budget {budget}",
               file=sys.stderr)
-
-    client = make_client(cfg, args.frontend, case_dir)
-
-    backend_script = case_dir / "shared_backend" / "rdl_backend.py"
-    if not backend_script.is_file():
-        raise SystemExit(f"shared backend missing: {backend_script}")
 
     system_msg = (
         f"You are an expert SMT-LIB / RDL implementer. You will write a "

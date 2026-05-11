@@ -123,13 +123,22 @@ def aggregate(runs_dir: Path) -> list[dict]:
     return rows
 
 
+# A provider string is bucketed into one of two coarse classes; anything
+# that is not literally ``mock`` is treated as a real-LLM call and gets
+# folded into the ``real`` row. This avoids the paper table reporting
+# a meaningless mixed mean across mock fixtures and live API calls.
+def _provider_class(p: str) -> str:
+    return "mock" if (p or "").strip().lower() == "mock" else "real"
+
+
 def per_frontend_summary(rows: list[dict]) -> list[dict]:
-    by_fe: dict[str, list[dict]] = {}
+    by_key: dict[tuple[str, str], list[dict]] = {}
     for r in rows:
-        by_fe.setdefault(r["frontend"], []).append(r)
+        key = (r["frontend"], _provider_class(r.get("provider", "")))
+        by_key.setdefault(key, []).append(r)
     out: list[dict] = []
-    for fe in sorted(by_fe):
-        bucket = by_fe[fe]
+    for (fe, prov_class) in sorted(by_key):
+        bucket = by_key[(fe, prov_class)]
         n = len(bucket)
         successes = [r for r in bucket if r["first_pass_success"]]
         any_success = [r for r in bucket
@@ -143,6 +152,7 @@ def per_frontend_summary(rows: list[dict]) -> list[dict]:
         with_usage = [r for r in bucket if r.get("n_chat_calls_with_usage", 0) > 0]
         out.append({
             "frontend": fe,
+            "provider_class": prov_class,
             "n_trials": n,
             "n_trials_with_usage": len(with_usage),
             "first_pass_success_rate": round(len(successes) / n, 3) if n else 0.0,
@@ -188,12 +198,14 @@ def _fmt_tokens(r: dict) -> str:
 
 
 def write_paper_tables(out_dir: Path, per_fe: list[dict]) -> None:
-    md_lines = ["| frontend | trials | first-pass | any success | mean iters | "
-                "test acc. | SLOC (median) | wallclock (s) | tokens (in/out/reason.) |",
-                "|---|---|---|---|---|---|---|---|---|"]
+    md_lines = ["| frontend | provider | trials | first-pass | any success | "
+                "mean iters | test acc. | SLOC (median) | wallclock (s) | "
+                "tokens (in/out/reason.) |",
+                "|---|---|---|---|---|---|---|---|---|---|"]
     for r in per_fe:
         md_lines.append(
-            f"| {r['frontend']} | {r['n_trials']} | "
+            f"| {r['frontend']} | {r['provider_class']} | "
+            f"{r['n_trials']} | "
             f"{r['first_pass_success_rate']:.2f} | "
             f"{r['any_success_rate']:.2f} | "
             f"{r['mean_iters_to_success']:.2f} | "
@@ -206,15 +218,16 @@ def write_paper_tables(out_dir: Path, per_fe: list[dict]) -> None:
                                             encoding="utf-8")
 
     tex = [
-        r"\begin{tabular}{lrrrrrrrr}",
+        r"\begin{tabular}{llrrrrrrrr}",
         r"\toprule",
-        r"frontend & trials & first-pass & any-succ. & mean iters & "
+        r"frontend & provider & trials & first-pass & any-succ. & mean iters & "
         r"test acc. & SLOC (med.) & wallclock (s) & tokens (in/out/reason.) \\",
         r"\midrule",
     ]
     for r in per_fe:
         tex.append(
-            f"{r['frontend'].replace('_', r'\_')} & {r['n_trials']} & "
+            f"{r['frontend'].replace('_', r'\_')} & "
+            f"{r['provider_class']} & {r['n_trials']} & "
             f"{r['first_pass_success_rate']:.2f} & "
             f"{r['any_success_rate']:.2f} & "
             f"{r['mean_iters_to_success']:.2f} & "
@@ -250,7 +263,8 @@ def main(argv: list[str]) -> int:
                       "test_unknown", "test_wrong", "test_adapter_error",
                       "test_accuracy_strict", "adapter_sloc"]
     per_fe = per_frontend_summary(rows)
-    per_fe_fields = ["frontend", "n_trials", "n_trials_with_usage",
+    per_fe_fields = ["frontend", "provider_class", "n_trials",
+                     "n_trials_with_usage",
                      "first_pass_success_rate",
                      "any_success_rate", "mean_iters_to_success",
                      "mean_test_accuracy", "median_adapter_sloc",
