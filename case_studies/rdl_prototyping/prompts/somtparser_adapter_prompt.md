@@ -10,9 +10,26 @@
   else in the repo.
 * **Frontend identifier:** `"somtparser"` (use this as the `frontend`
   field of every JSON output).
-* **CMake target name:** `somtparser-rdl-adapter`. Link against the
-  vendored `somtparser_static` library that the top-level CMake exposes
-  (the harness builds you with `-DBUILD_RDL_LLM_ADAPTERS=ON`).
+* **CMake target name:** `somtparser-rdl-adapter` (the harness greps
+  the build dir for an executable matching `*-rdl-adapter`).
+* **How the harness builds you:** in your `src/` directory, the
+  harness runs `cmake -S . -B build -DSOMTPARSER_ROOT=<path> ...`
+  with **no top-level CMake involvement**. The recommended pattern is
+  to `add_subdirectory("${SOMTPARSER_ROOT}" "${CMAKE_BINARY_DIR}/somtparser_build")`
+  in your own `CMakeLists.txt` so you pick up the `somtparser_static`
+  target (which propagates `SOMTParser/include` as an include dir).
+  See `fairness_rules.md` §I for the full list of variables the
+  harness sets. Minimal example:
+
+  ```cmake
+  cmake_minimum_required(VERSION 3.10)
+  project(somtparser_rdl_adapter CXX)
+  set(CMAKE_CXX_STANDARD 17)
+  add_subdirectory("${SOMTPARSER_ROOT}"
+                   "${CMAKE_BINARY_DIR}/somtparser_build")
+  add_executable(somtparser-rdl-adapter main.cpp)
+  target_link_libraries(somtparser-rdl-adapter PRIVATE somtparser_static)
+  ```
 
 ## Allowed / forbidden APIs
 

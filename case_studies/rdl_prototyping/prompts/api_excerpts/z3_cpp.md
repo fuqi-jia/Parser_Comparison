@@ -47,6 +47,9 @@ The auditor blocks every solver entry point.
 
 ## Build
 
-Link against the system `libz3` discovered with `find_package(Z3)` or via
-`pkg-config`. The harness builds whatever `CMakeLists.txt` your adapter
-ships next to its `main.cpp`.
+There is **no** system `libz3` and **no** `Z3Config.cmake` on the trial
+machine. Use the harness-provided `Z3_INCLUDE_DIR` / `Z3_LIBRARY_DIR`
+CMake variables — see `fairness_rules.md` §I and the example
+`CMakeLists.txt` in `z3_adapter_prompt.md`. The harness adds
+`${Z3_LIBRARY_DIR}` to `LD_LIBRARY_PATH` so `libz3.so` resolves at
+adapter run time without rpaths.

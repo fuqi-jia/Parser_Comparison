@@ -8,9 +8,31 @@
   `case_studies/rdl_prototyping/results/runs/smt_switch/run_NN/src/`.
   Write `main.cpp` and a `CMakeLists.txt` there.
 * **Frontend identifier:** `"smt_switch"`.
-* **CMake target name:** `smt-switch-rdl-adapter`. Pick **one** back-end
-  factory (`Cvc5SolverFactory` or `Z3SolverFactory`) for parsing only;
-  link against the vendored `external/smt-switch/` static libs.
+* **CMake target name:** `smt-switch-rdl-adapter` (the harness greps
+  the build dir for an executable matching `*-rdl-adapter`).
+* **How the harness builds you:** smt-switch ships **inside this repo**
+  as a pre-built `.so` set under `${SMT_SWITCH_LIBRARY_DIR}`, with
+  headers in `${SMT_SWITCH_INCLUDE_DIR}` (see `fairness_rules.md` §I).
+  The cvc5 back-end of smt-switch is the only one this trial vendors
+  (`libsmt-switch-cvc5.so`). Z3 / Boolector / MathSAT factories are
+  **not** vendored and will fail to link. Skeleton:
+
+  ```cmake
+  cmake_minimum_required(VERSION 3.10)
+  project(smt_switch_rdl_adapter CXX)
+  set(CMAKE_CXX_STANDARD 17)
+  add_executable(smt-switch-rdl-adapter main.cpp)
+  target_include_directories(smt-switch-rdl-adapter PRIVATE
+      "${SMT_SWITCH_INCLUDE_DIR}")
+  target_link_directories(smt-switch-rdl-adapter PRIVATE
+      "${SMT_SWITCH_LIBRARY_DIR}"
+      "${SMT_SWITCH_CVC5_LIBRARY_DIR}")
+  target_link_libraries(smt-switch-rdl-adapter PRIVATE
+      smt-switch-cvc5 smt-switch)
+  ```
+
+  At run time the harness puts both library directories on
+  `LD_LIBRARY_PATH` so `libsmt-switch*.so` resolve without rpaths.
 
 ## Allowed / forbidden APIs
 
@@ -25,6 +47,10 @@ sort kind. **No** `Solver::check_sat`, `check_sat_assuming`,
 * The cleanest route is a small `SmtLibReader` subclass that overrides
   `assert(...)` to push terms into a vector, then walk that vector
   outside the reader.
+* **Use the cvc5 back-end (`Cvc5SolverFactory`)** for parsing — that's
+  the only solver factory whose `.so` is vendored. Asking for
+  `Z3SolverFactory` will fail to link because `libsmt-switch-z3.so`
+  is not present in `${SMT_SWITCH_LIBRARY_DIR}`.
 * `Op` flattens many surface forms into a small set of `PrimOp`s
   (`Le`, `Lt`, `Ge`, `Gt`, `Equal`, `Plus`, `Minus`, `Negate`, `Mult`).
   Treat `Plus(x, Negate(y))` as `(- x y)`.

@@ -19,12 +19,12 @@ solver.
 
 ## ANTLR-specific subtleties
 
-* The official SMT-LIB v2.6 grammar may not be in the repo. If it is
-  not under `external/antlr4/`, generate one minimally large enough to
-  parse QF_RDL atoms (assertions / `declare-fun` / numerals / signed
-  numerals / parenthesised expressions). It is fine for the grammar to
-  reject formulae outside QF_RDL — the adapter then emits
-  `status: "unsupported"`.
+* The harness exports `ANTLR4_ROOT=external/antlr4_parser/` (see
+  `fairness_rules.md` §I). That directory ships the SMT-LIB v2.6
+  grammar `SMTLIBv2.g4`, a pre-generated Java listener/lexer/parser
+  set of `.java` and `.class` files, plus `lib/antlr-4.13.1-complete.jar`
+  (or similar) and a `Makefile`. You can either reuse those generated
+  artefacts directly or regenerate them.
 * You implement *all* sort tracking, numeral parsing, and atom
   classification yourself: pySMT does it for you, ANTLR does not.
 * Keep numerals as raw text and pass them through to the JSON `bound`
@@ -42,11 +42,17 @@ solver.
 
 ## Build hints
 
-* Java route: ship a `build.sh` that runs
-  `antlr4 -Dlanguage=Java SMTLIBv2.g4` (use the antlr4 jar provided by
-  the system PATH or vendored under `external/antlr4/`), then
-  `javac` against that runtime, and a `run.sh` that invokes the
-  resulting class with `java -cp ...`.
-* Python route: `pip install antlr4-python3-runtime`, generate with
-  `antlr4 -Dlanguage=Python3`, write a small `extract_rdl.py`, and
-  have `run.sh` exec `python3 extract_rdl.py "$@"`.
+* **Java route (recommended, fully offline-friendly).** In `build.sh`
+  use `${ANTLR4_ROOT}` to locate the antlr runtime jar and the
+  pre-generated `.java` / `.class` files:
+  `javac -cp "${ANTLR4_ROOT}/lib/antlr-*-complete.jar:${ANTLR4_ROOT}" \
+   -d classes "${ANTLR4_ROOT}"/*.java *.java`
+  Then in `run.sh`:
+  `java -cp "classes:${ANTLR4_ROOT}:${ANTLR4_ROOT}/lib/antlr-*-complete.jar" Adapter "$@"`.
+  Prefer this path — relying on the vendored runtime keeps the build
+  hermetic and deterministic across re-runs.
+* **Python route (alternative).** PyPI is reachable from the trial
+  sandbox, so an `extract_rdl.py` + `requirements.txt` listing
+  `antlr4-python3-runtime` works — but you must then regenerate the
+  Python parser/lexer from `${ANTLR4_ROOT}/SMTLIBv2.g4`, since only
+  the Java versions are pre-generated in the vendored tree.

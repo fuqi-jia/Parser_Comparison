@@ -2,9 +2,12 @@
 
 The ANTLR4 front-end is the most "raw" of the seven: there is no SMT-LIB
 parser library at all, just a generated grammar that produces a parse
-tree. The trial assumes you start from the SMT-LIB v2.6 grammar already
-checked into `external/antlr4/grammar/SMTLIBv2.g4` (or download the
-official grammar from the SMT-LIB site if absent).
+tree. The trial harness exposes `ANTLR4_ROOT=external/antlr4_parser/`
+(see `fairness_rules.md` §I); that directory ships the SMT-LIB v2.6
+grammar `SMTLIBv2.g4`, pre-generated `SMTLIBv2*.java` files (lexer,
+parser, listener, visitor) as well as their compiled `.class` files,
+and the antlr runtime jar under `lib/`. There is no network access at
+trial time, so do not attempt to download the grammar or jars.
 
 This adapter is intentionally a stress test for "the LLM has to invent
 the symbol/sort layer itself".
@@ -44,14 +47,8 @@ implement:
 
 ## Build
 
-The adapter lives at `adapters/antlr4/` and ships a small `build.sh`
-that runs `antlr4 -Dlanguage=Java SMTLIBv2.g4` and `javac`. The wrapper
-script `adapters/antlr4/run.sh` is what the harness invokes:
-
-```
-./adapters/antlr4/run.sh input.smt2 output.json
-```
-
-A Python ANTLR runtime variant is also acceptable; produce a
-`adapters/antlr4/extract_rdl.py` wrapper instead. Whichever you pick,
-keep the binary contract identical.
+Write `build.sh` and `run.sh` in your run's `src/` directory. The
+harness then runs `bash build.sh` followed by `bash run.sh input.smt2
+output.json` per input file. See `antlr4_adapter_prompt.md` for a
+concrete `javac` invocation using `${ANTLR4_ROOT}/lib/*.jar` and the
+pre-generated parser sources.

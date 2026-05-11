@@ -20,10 +20,12 @@ to Z3/cvc5/Yices, no `SMT::checkSat`.
 
 ## jSMTLIB-specific subtleties
 
-* `jSMTLIB` ships the SMT-LIB v2.6 grammar as a bundled resource. Set
-  `smt.smtConfig.smtlib = ".../bin/SMT-LIBv2.6"` to the path inside
-  the vendored `external/jsmtlib/` install; if that fails to resolve,
-  fall back to the `org.smtlib.SMT.smtlib2` static helper.
+* The harness exports `JSMTLIB_ROOT` and `JSMTLIB_DIST_ROOT` (see
+  `fairness_rules.md` §I). `JSMTLIB_DIST_ROOT` is the unpacked
+  upstream distribution `jSMTLIB-0.9.10.1/` and ships the SMT-LIB v2.6
+  grammar bundle plus the runtime jars. Build against these vendored
+  jars to keep the trial hermetic; Maven Central is reachable but
+  not part of the trial contract.
 * Operators reach you as `IFcnExpr`, with `head().toString()` returning
   `"and"`, `"<="`, `"<"`, `">="`, `">"`, `"="`, `"-"`, `"+"`, `"*"`.
   Pattern-match on these strings; jSMTLIB does not normalise them
@@ -43,9 +45,11 @@ to Z3/cvc5/Yices, no `SMT::checkSat`.
 
 ## Build hints
 
-* `build.sh` should compile against the jars under
-  `external/jsmtlib/lib/`. Avoid relying on Maven Central downloads
-  during the trial.
-* `run.sh` should set the `SMT_LIB2_GRAMMAR` environment variable (or
-  pass `-D...`) to the bundled grammar path so jSMTLIB does not error
-  on first parse.
+* `build.sh` should compile your `*.java` files against the jars
+  under `${JSMTLIB_DIST_ROOT}/lib/` (or `${JSMTLIB_ROOT}/lib/`,
+  whichever your `ls` finds them in). No network downloads are
+  available.
+* `run.sh` should set the grammar-resource path (e.g.
+  `-Dsmt.smtConfig.smtlib="${JSMTLIB_DIST_ROOT}/bin/SMT-LIBv2.6"`) or
+  fall back to `org.smtlib.SMT.smtlib2` so jSMTLIB does not error on
+  first parse.

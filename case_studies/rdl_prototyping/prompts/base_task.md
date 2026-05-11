@@ -239,16 +239,21 @@ trial.
 ## Where the adapter lives
 
 * C++: write `main.cpp` and a `CMakeLists.txt` in your run's `src/`
-  directory. The trial harness will configure with
-  `-DBUILD_RDL_LLM_ADAPTERS=ON` from the repo root and pick your
-  `CMakeLists.txt` up via the glob in
-  `CMakeLists.txt`'s `BUILD_RDL_LLM_ADAPTERS` block.
+  directory. The harness runs `cmake -S . -B build -D<KEY>=<PATH>...`
+  *inside that directory* (no top-level CMake involvement); see
+  `fairness_rules.md` §I for the vendored-dependency variables it
+  passes in.
 * Python: write `extract_rdl.py` plus a `requirements.txt` listing only
-  the front-end you need (e.g. `pysmt==0.9.6`). The harness invokes it
-  as `python3 extract_rdl.py input.smt2 output.json`.
-* JVM: write a `build.sh` that produces a runnable jar plus a
-  `run.sh input.smt2 output.json` wrapper. The harness invokes
-  `run.sh`.
+  the front-end you need (e.g. `pysmt==0.9.6`). The harness creates a
+  per-run venv and runs `pip install -r requirements.txt` against
+  public PyPI before exec'ing `python3 extract_rdl.py input.smt2
+  output.json`, so adding `pysmt` (or any pip-installable dep your
+  adapter needs) is fine.
+* JVM: write a `build.sh` that compiles your sources using the
+  vendored jars under `${ANTLR4_ROOT}/lib/` or
+  `${JSMTLIB_DIST_ROOT}/lib/`, plus a `run.sh input.smt2 output.json`
+  wrapper. The harness invokes `run.sh`. Maven Central is not part
+  of the trial contract — rely on vendored jars only.
 
 ## Delivery format (read carefully)
 

@@ -206,6 +206,116 @@ def materialise_files(turn_src_dir: Path, response: str) -> list[Path]:
 
 
 # --------------------------------------------------------------------------
+# Vendored dependency discovery.
+#
+# The repo ships every front-end's parser as a submodule or pre-built
+# package under SOMTParser/ or external/<name>/. To keep the LLM trial
+# fair across all front-ends, the harness probes those locations and
+# (a) passes the resolved absolute paths to ``cmake configure`` as
+#     -D<KEY>=<PATH> definitions, and
+# (b) exports the same names as environment variables for build.sh /
+#     run.sh / Python / Java adapters,
+# (c) prepends every discovered shared-library directory to
+#     ``LD_LIBRARY_PATH`` when invoking the produced adapter binary, so
+#     the LLM never has to hard-code rpaths or assume a system install.
+#
+# Keys are only present if the underlying path actually exists, so a
+# prompt can say "if Z3_ROOT is set, use ${Z3_ROOT}/include and
+# ${Z3_ROOT}/bin; otherwise fall back to system z3".
+# --------------------------------------------------------------------------
+def discover_vendored_deps(repo_root: Path) -> dict[str, str]:
+    """Return absolute-path string values for every vendored dep we can
+    find under ``repo_root``. Missing paths are simply omitted."""
+    deps: dict[str, str] = {"PARSER_COMPARISON_ROOT": str(repo_root)}
+
+    somt = repo_root / "SOMTParser"
+    if (somt / "CMakeLists.txt").is_file() and (somt / "include").is_dir():
+        deps["SOMTPARSER_ROOT"] = str(somt)
+        deps["SOMTPARSER_INCLUDE_DIR"] = str(somt / "include")
+
+    # Z3: prefer the vendored pre-built glibc 2.39 package.
+    z3_pkg = next(iter(sorted(
+        (repo_root / "external" / "z3").glob("z3-*-x64-*"))), None)
+    if z3_pkg and (z3_pkg / "include" / "z3++.h").is_file():
+        deps["Z3_ROOT"] = str(z3_pkg)
+        deps["Z3_INCLUDE_DIR"] = str(z3_pkg / "include")
+        # Z3 ships its libs under bin/ in the prebuilt package, not lib/.
+        lib_candidates = [z3_pkg / "bin", z3_pkg / "lib"]
+        for lib_dir in lib_candidates:
+            if any(lib_dir.glob("libz3*")):
+                deps["Z3_LIBRARY_DIR"] = str(lib_dir)
+                break
+
+    # cvc5: vendored as the libcxx-static pre-built package; .a only.
+    cvc5_pkg = repo_root / "external" / "cvc5" / "cvc5-Linux-x86_64-libcxx-static"
+    if (cvc5_pkg / "include" / "cvc5" / "cvc5.h").is_file():
+        deps["CVC5_ROOT"] = str(cvc5_pkg)
+        deps["CVC5_INCLUDE_DIR"] = str(cvc5_pkg / "include")
+        if any((cvc5_pkg / "lib").glob("libcvc5*")):
+            deps["CVC5_LIBRARY_DIR"] = str(cvc5_pkg / "lib")
+
+    # smt-switch: source tree under smt-switch-1.0.6/ and a sibling
+    # build/ with .so artefacts produced by external/smt-switch/build.sh.
+    ss_root = repo_root / "external" / "smt-switch"
+    ss_src = ss_root / "smt-switch-1.0.6"
+    if (ss_src / "include" / "smt.h").is_file():
+        deps["SMT_SWITCH_ROOT"] = str(ss_root)
+        deps["SMT_SWITCH_INCLUDE_DIR"] = str(ss_src / "include")
+    ss_build = ss_root / "build" / "smt-switch-1.0.6"
+    if (ss_build / "libsmt-switch.so").is_file():
+        deps["SMT_SWITCH_LIBRARY_DIR"] = str(ss_build)
+    ss_cvc5_solver = ss_build / "cvc5"
+    if (ss_cvc5_solver / "libsmt-switch-cvc5.so").is_file():
+        deps["SMT_SWITCH_CVC5_LIBRARY_DIR"] = str(ss_cvc5_solver)
+
+    # ANTLR4 / jSMTLIB: vendored as ready-to-use class files and
+    # grammar/Makefile/run.sh under external/<name>_parser/. The
+    # adapter is free to either reuse those artefacts directly or
+    # regenerate them; either way the path is available.
+    antlr4 = repo_root / "external" / "antlr4_parser"
+    if (antlr4 / "SMTLIBv2.g4").is_file():
+        deps["ANTLR4_ROOT"] = str(antlr4)
+    jsmtlib = repo_root / "external" / "jsmtlib"
+    if (jsmtlib / "build.sh").is_file():
+        deps["JSMTLIB_ROOT"] = str(jsmtlib)
+        # The downloaded jSMTLIB-0.9.10.1 tree (jars + bundled grammar).
+        for cand in jsmtlib.glob("jSMTLIB-*"):
+            if cand.is_dir():
+                deps["JSMTLIB_DIST_ROOT"] = str(cand)
+                break
+
+    return deps
+
+
+def deps_cmake_defines(deps: dict[str, str]) -> list[str]:
+    """Render `-DKEY=PATH` flags for cmake configure."""
+    return [f"-D{k}={v}" for k, v in sorted(deps.items())]
+
+
+def deps_subprocess_env(deps: dict[str, str]) -> dict[str, str]:
+    """Build a subprocess env dict: parent env + dep vars + LD_LIBRARY_PATH.
+
+    LD_LIBRARY_PATH is augmented with every discovered library dir so
+    the produced adapter binary can dlopen libz3.so /
+    libsmt-switch*.so at exec time without rpaths.
+    """
+    env = dict(os.environ)
+    env.update(deps)
+    extra_lib_dirs = [
+        deps.get("Z3_LIBRARY_DIR"),
+        deps.get("CVC5_LIBRARY_DIR"),
+        deps.get("SMT_SWITCH_LIBRARY_DIR"),
+        deps.get("SMT_SWITCH_CVC5_LIBRARY_DIR"),
+    ]
+    extra_lib_dirs = [d for d in extra_lib_dirs if d]
+    if extra_lib_dirs:
+        existing = env.get("LD_LIBRARY_PATH", "")
+        env["LD_LIBRARY_PATH"] = ":".join(extra_lib_dirs + (
+            [existing] if existing else []))
+    return env
+
+
+# --------------------------------------------------------------------------
 # Build / invoke driver.
 # --------------------------------------------------------------------------
 def detect_invocation(src_dir: Path) -> tuple[str, list[str]] | None:
@@ -248,14 +358,14 @@ def diagnose_missing_entry(src_dir: Path) -> str:
         return (
             "ERROR: src/ contains main.cpp but no CMakeLists.txt; the "
             "C++ harness requires BOTH files (the harness runs "
-            "`cmake -S src -B build && cmake --build build -j`). Please "
-            "re-emit a CMakeLists.txt that compiles main.cpp and links "
-            "against the parser library you chose. Hint: on this "
-            "machine libz3.so and libcvc5.so / libcvc5parser.so are "
-            "available system-wide via the linker, but Z3Config.cmake "
-            "is NOT installed, so prefer "
-            "`find_library(Z3_LIB z3)` over "
-            "`find_package(Z3 CONFIG REQUIRED)`.\n"
+            "`cmake -S src -B build -D<vendored-dep>=<path> ... && "
+            "cmake --build build -j`). Please re-emit a CMakeLists.txt "
+            "that compiles main.cpp and links against the parser "
+            "library you chose. Use the vendored CMake variables that "
+            "the harness sets (e.g. ${SOMTPARSER_ROOT}, ${Z3_ROOT}, "
+            "${CVC5_ROOT}, ${SMT_SWITCH_ROOT}); the JSON file "
+            "`../prompt/vendored_deps.json` of this run lists which "
+            "ones are actually populated.\n"
             f"Files currently in src/: {files}\n"
         )
     if has_cmake and not has_main:
@@ -295,8 +405,18 @@ def diagnose_missing_entry(src_dir: Path) -> str:
     )
 
 
-def build_adapter(src_dir: Path, build_log_dir: Path) -> tuple[bool, str]:
-    """Configure & build the adapter if it is C++. Returns (ok, log_text)."""
+def build_adapter(src_dir: Path, build_log_dir: Path,
+                  deps: dict[str, str] | None = None) -> tuple[bool, str]:
+    """Configure & build the adapter if it is C++. Returns (ok, log_text).
+
+    ``deps`` is the mapping returned by ``discover_vendored_deps``. Its
+    keys are exposed both as CMake ``-D<KEY>=<PATH>`` definitions
+    (for the cmake path) and as subprocess environment variables (for
+    the shell / python path), plus an augmented ``LD_LIBRARY_PATH``
+    that includes every vendored library directory.
+    """
+    deps = deps or {}
+    env = deps_subprocess_env(deps)
     build_log_dir.mkdir(parents=True, exist_ok=True)
     log_path = build_log_dir / "build.log"
     invoc = detect_invocation(src_dir)
@@ -316,6 +436,7 @@ def build_adapter(src_dir: Path, build_log_dir: Path) -> tuple[bool, str]:
                 p = subprocess.run(
                     ["bash", "build.sh"],
                     cwd=src_dir,
+                    env=env,
                     capture_output=True, text=True, timeout=600,
                 )
                 ok = p.returncode == 0
@@ -339,6 +460,7 @@ def build_adapter(src_dir: Path, build_log_dir: Path) -> tuple[bool, str]:
                 if has_real:
                     p1 = subprocess.run(
                         [sys.executable, "-m", "venv", str(venv_dir)],
+                        env=env,
                         capture_output=True, text=True, timeout=120,
                     )
                     if p1.returncode != 0:
@@ -349,6 +471,7 @@ def build_adapter(src_dir: Path, build_log_dir: Path) -> tuple[bool, str]:
                     pip = venv_dir / "bin" / "pip"
                     p2 = subprocess.run(
                         [str(pip), "install", "-r", str(src_dir / "requirements.txt")],
+                        env=env,
                         capture_output=True, text=True, timeout=300,
                     )
                     log_path.write_text(
@@ -364,27 +487,31 @@ def build_adapter(src_dir: Path, build_log_dir: Path) -> tuple[bool, str]:
                             encoding="utf-8")
         return True, log_path.read_text(encoding="utf-8")
 
-    # CMake C++ path.
+    # CMake C++ path: pre-pend -D<KEY>=<PATH> for every vendored dep so
+    # the adapter's CMakeLists.txt can rely on $SOMTPARSER_ROOT etc.
     build_dir = build_log_dir / "cmake_build"
     build_dir.mkdir(parents=True, exist_ok=True)
+    cfg_cmd = ["cmake", "-S", str(src_dir), "-B", str(build_dir)] \
+              + deps_cmake_defines(deps)
     try:
         p1 = subprocess.run(
-            ["cmake", "-S", str(src_dir), "-B", str(build_dir)],
+            cfg_cmd, env=env,
             capture_output=True, text=True, timeout=300,
         )
         if p1.returncode != 0:
             log_path.write_text(
-                f"$ cmake configure\n[exit={p1.returncode}]\n"
+                f"$ {' '.join(cfg_cmd)}\n[exit={p1.returncode}]\n"
                 f"STDOUT:\n{p1.stdout}\nSTDERR:\n{p1.stderr}\n",
                 encoding="utf-8")
             return False, log_path.read_text(encoding="utf-8")
         p2 = subprocess.run(
             ["cmake", "--build", str(build_dir), "-j"],
+            env=env,
             capture_output=True, text=True, timeout=900,
         )
         ok = p2.returncode == 0
         log_path.write_text(
-            f"$ cmake configure\n[exit=0]\nSTDOUT:\n{p1.stdout}\n"
+            f"$ {' '.join(cfg_cmd)}\n[exit=0]\nSTDOUT:\n{p1.stdout}\n"
             f"STDERR:\n{p1.stderr}\n\n"
             f"$ cmake --build\n[exit={p2.returncode}]\n"
             f"STDOUT:\n{p2.stdout}\nSTDERR:\n{p2.stderr}\n",
@@ -422,12 +549,20 @@ def adapter_argv(src_dir: Path, build_log_dir: Path,
 # --------------------------------------------------------------------------
 def run_set(src_dir: Path, build_log_dir: Path, dataset_dir: Path,
             index_csv: Path, out_root: Path, label: str,
-            backend_script: Path) -> dict:
-    """Run the adapter on every file in `index_csv` and grade against `status`."""
+            backend_script: Path,
+            deps: dict[str, str] | None = None) -> dict:
+    """Run the adapter on every file in `index_csv` and grade against `status`.
+
+    ``deps`` is threaded into the adapter's subprocess env so the
+    binary/Python/Java entry point can dlopen vendored ``libz3.so`` /
+    ``libsmt-switch.so`` / read ``$SOMTPARSER_ROOT`` at run time.
+    """
     out_root.mkdir(parents=True, exist_ok=True)
     adapter_out = out_root / "adapter_out"
     adapter_out.mkdir(exist_ok=True)
     rows: list[dict] = []
+
+    env = deps_subprocess_env(deps or {})
 
     with index_csv.open("r", encoding="utf-8") as f:
         index_rows = list(csv.DictReader(f))
@@ -447,7 +582,8 @@ def run_set(src_dir: Path, build_log_dir: Path, dataset_dir: Path,
             verdict = "adapter_missing"
         else:
             try:
-                p = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+                p = subprocess.run(argv, env=env,
+                                   capture_output=True, text=True, timeout=60)
                 if p.returncode != 0 or not out_json.is_file():
                     verdict = "adapter_error"
                 else:
@@ -580,6 +716,12 @@ def run_trial(args) -> int:
     if not backend_script.is_file():
         raise SystemExit(f"shared backend missing: {backend_script}")
 
+    # Discover vendored parser dependencies in repo. These are then
+    # injected into every cmake configure (-D<KEY>=<PATH>) and every
+    # subprocess env (so build.sh / run.sh / adapter binary all see
+    # the same paths). Recorded in meta.json for the paper.
+    deps = discover_vendored_deps(repo_root)
+
     # All preconditions ok → commit to creating run_dir.
     ensure_run_dirs(run_dir)
     write_immutable(run_dir / "prompt" / "bundle.md", bundle)
@@ -587,6 +729,8 @@ def run_trial(args) -> int:
                     sha256_text(bundle) + "\n")
     write_immutable(run_dir / "prompt" / "sources.txt",
                     "\n".join(sources) + "\n")
+    write_immutable(run_dir / "prompt" / "vendored_deps.json",
+                    json.dumps(deps, indent=2, sort_keys=True) + "\n")
     if bundle_tokens > budget:
         print(f"WARNING: bundle ~{bundle_tokens} tokens exceeds budget {budget}",
               file=sys.stderr)
@@ -631,6 +775,7 @@ def run_trial(args) -> int:
         "tokens_total": tokens_total,
         "first_pass_success": False,
         "iterations_to_success": None,
+        "vendored_deps": deps,
     }
 
     succeeded = False
@@ -719,7 +864,7 @@ def run_trial(args) -> int:
 
         # 4. Build.
         turn_build = run_dir / "build" / f"turn_{turn:02d}"
-        build_ok, build_log = build_adapter(turn_src, turn_build)
+        build_ok, build_log = build_adapter(turn_src, turn_build, deps=deps)
 
         # 5. Run on dev set (only if build OK and audit pass; we still
         # *record* a dev attempt with adapter_missing entries when build
@@ -734,6 +879,7 @@ def run_trial(args) -> int:
                 out_root=run_dir / "dev" / f"turn_{turn:02d}",
                 label="dev",
                 backend_script=backend_script,
+                deps=deps,
             )
             if dev_result["summary"]["wrong"] == 0 and \
                dev_result["summary"]["adapter_error"] == 0 and \
@@ -792,6 +938,7 @@ def run_trial(args) -> int:
             out_root=run_dir / "final_test",
             label="test",
             backend_script=backend_script,
+            deps=deps,
         )
         final_summary["final_test_summary"] = test_result["summary"]
         final_summary["final_test_turn"] = last_good_turn

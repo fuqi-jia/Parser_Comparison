@@ -8,8 +8,25 @@
   `case_studies/rdl_prototyping/results/runs/z3_cpp/run_NN/src/`. Write
   `main.cpp` and a `CMakeLists.txt` there.
 * **Frontend identifier:** `"z3_cpp"`.
-* **CMake target name:** `z3-rdl-adapter`. Link against system `libz3`
-  (`find_package(Z3 REQUIRED)` or `pkg-config --libs z3`).
+* **CMake target name:** `z3-rdl-adapter` (the harness greps the build
+  dir for an executable matching `*-rdl-adapter`).
+* **How the harness builds you:** Z3 ships **inside this repo** as a
+  pre-built package. There is no system `find_package(Z3)` available
+  and no `Z3Config.cmake`; use the harness-provided variables
+  `Z3_INCLUDE_DIR` and `Z3_LIBRARY_DIR` (see `fairness_rules.md` §I).
+  Shared libs live in `${Z3_LIBRARY_DIR}` (which is the prebuilt
+  package's `bin/`, not `lib/`). The harness adds that directory to
+  `LD_LIBRARY_PATH` at run time. Minimal example:
+
+  ```cmake
+  cmake_minimum_required(VERSION 3.10)
+  project(z3_rdl_adapter CXX)
+  set(CMAKE_CXX_STANDARD 17)
+  add_executable(z3-rdl-adapter main.cpp)
+  target_include_directories(z3-rdl-adapter PRIVATE "${Z3_INCLUDE_DIR}")
+  target_link_directories(z3-rdl-adapter PRIVATE "${Z3_LIBRARY_DIR}")
+  target_link_libraries(z3-rdl-adapter PRIVATE z3)
+  ```
 
 ## Allowed / forbidden APIs
 

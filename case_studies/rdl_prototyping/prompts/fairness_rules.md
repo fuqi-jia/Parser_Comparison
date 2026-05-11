@@ -145,3 +145,82 @@ Reporting `status: "unsupported"` with a truthful `reason` is always
 preferred over a guess. The shared backend turns `"unsupported"` into the
 verdict `unknown`, which counts neither as a pass nor a wrong answer in the
 fairness-aware metrics described in `case_study_notes.md`.
+
+## I. Vendored dependencies the harness provides
+
+All seven front-end libraries ship as submodules / pre-built packages
+**inside this repository**, not as system-wide installs. The trial harness
+discovers them at `run_llm_trial.py` startup and exposes their absolute
+paths to your adapter via **both** of:
+
+1. `-D<KEY>=<PATH>` flags appended to every `cmake configure` invocation
+   (so `${KEY}` is available in your `CMakeLists.txt`).
+2. Identically-named environment variables exported to every
+   `bash build.sh` / `bash run.sh` / Python / Java adapter invocation
+   (so `${KEY}` is available in shell scripts and `os.environ[KEY]` in
+   Python). The harness additionally prepends every vendored shared-
+   library directory to `LD_LIBRARY_PATH` for the produced binary.
+
+The complete list of variables that **may** be set (any one of them is
+*absent* if the underlying path is missing — your build must therefore
+guard the path it actually needs):
+
+| variable | what it points to |
+|---|---|
+| `PARSER_COMPARISON_ROOT`     | repo root |
+| `SOMTPARSER_ROOT`            | `SOMTParser/` (has its own CMakeLists; `add_subdirectory` is the recommended use) |
+| `SOMTPARSER_INCLUDE_DIR`     | `SOMTParser/include` |
+| `Z3_ROOT`                    | `external/z3/z3-<ver>-x64-glibc-2.39/` (pre-built Z3 package) |
+| `Z3_INCLUDE_DIR`             | `${Z3_ROOT}/include` (contains `z3++.h`, `z3.h`) |
+| `Z3_LIBRARY_DIR`             | `${Z3_ROOT}/bin` (contains `libz3.so`) |
+| `CVC5_ROOT`                  | `external/cvc5/cvc5-Linux-x86_64-libcxx-static/` |
+| `CVC5_INCLUDE_DIR`           | `${CVC5_ROOT}/include` (contains `cvc5/cvc5.h`, `cvc5/cvc5_parser.h`) |
+| `CVC5_LIBRARY_DIR`           | `${CVC5_ROOT}/lib` (`libcvc5.a`, `libcvc5parser.a`, deps) |
+| `SMT_SWITCH_ROOT`            | `external/smt-switch/` (whole vendor tree) |
+| `SMT_SWITCH_INCLUDE_DIR`     | `external/smt-switch/smt-switch-1.0.6/include` |
+| `SMT_SWITCH_LIBRARY_DIR`     | `external/smt-switch/build/smt-switch-1.0.6` (contains `libsmt-switch.so`) |
+| `SMT_SWITCH_CVC5_LIBRARY_DIR`| `${SMT_SWITCH_LIBRARY_DIR}/cvc5` (`libsmt-switch-cvc5.so`) |
+| `ANTLR4_ROOT`                | `external/antlr4_parser/` (grammar, prebuilt `.class` files, Makefile, jars under `lib/`) |
+| `JSMTLIB_ROOT`               | `external/jsmtlib/` (build.sh, run.sh, jars) |
+| `JSMTLIB_DIST_ROOT`          | `external/jsmtlib/jSMTLIB-<ver>/` (the upstream distribution dir) |
+
+**Hard rules following from this list:**
+
+1. **Do not assume any system install** of Z3 / cvc5 / smt-switch /
+   ANTLR / jSMTLIB. There is no `find_package(Z3)`, no
+   `apt-get install libz3-dev`. The vendored variables above are the
+   only sanctioned source for parser binaries / static libs / jars.
+   (PyPI and Maven Central are both reachable from the trial sandbox,
+   but treat them as fallbacks, not as primary dependencies — the
+   fairness comparison is against the vendored copies.)
+2. **`Z3_ROOT` ships shared libs under `${Z3_ROOT}/bin`** (not
+   `${Z3_ROOT}/lib`). The harness puts that directory on
+   `LD_LIBRARY_PATH`; in your CMakeLists.txt you typically write
+   `target_link_directories(<tgt> PRIVATE "${Z3_LIBRARY_DIR}")` then
+   `target_link_libraries(<tgt> PRIVATE z3)`.
+3. **`CVC5_ROOT` is the libcxx-static prebuilt package.** Its `.a`
+   archives reference LLVM `libc++` symbols (`std::__1::...`),
+   *not* GNU `libstdc++`. To link successfully you must set
+   `CMAKE_CXX_COMPILER=clang++` and pass `-stdlib=libc++` to both
+   compiler and linker. `clang++ 18` and `libc++-18-dev` are
+   pre-installed on the trial machine. The harness does NOT inject
+   these flags automatically — the adapter's CMakeLists.txt owns
+   the toolchain choice.
+4. **`SOMTPARSER_ROOT` is a source tree, not a prebuilt package.**
+   The recommended use is
+   `add_subdirectory("${SOMTPARSER_ROOT}" "${CMAKE_BINARY_DIR}/somtparser_build")`
+   then `target_link_libraries(<tgt> PRIVATE somtparser_static)`;
+   `target_include_directories` is unnecessary because the library
+   target propagates `SOMTParser/include/` automatically.
+5. **`SMT_SWITCH_*` libraries are pre-built `.so` files.** Your
+   CMakeLists should `target_link_directories` to
+   `${SMT_SWITCH_LIBRARY_DIR}` and link `smt-switch`, plus
+   `${SMT_SWITCH_CVC5_LIBRARY_DIR}` and `smt-switch-cvc5` if you
+   pick the cvc5 back-end.
+6. **For Java / shell adapters**, the same names are available as
+   shell variables; e.g. `build.sh` can do
+   `javac -cp "$JSMTLIB_DIST_ROOT/lib/*:..." Adapter.java`.
+
+If your build needs a path that is **not** in the table above, your
+adapter is probably trying to depend on something outside the trial
+contract — re-check §B / §C of these fairness rules first.

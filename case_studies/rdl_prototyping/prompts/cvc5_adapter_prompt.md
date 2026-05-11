@@ -8,10 +8,37 @@
   `case_studies/rdl_prototyping/results/runs/cvc5_cpp/run_NN/src/`.
   Write `main.cpp` and a `CMakeLists.txt` there.
 * **Frontend identifier:** `"cvc5_cpp"`.
-* **CMake target name:** `cvc5-rdl-adapter`. Link against the vendored
-  parser-only static libraries cvc5 ships under
-  `external/cvc5/build/install/` (the trial assumes those have been
-  built; do not modify `external/cvc5/`).
+* **CMake target name:** `cvc5-rdl-adapter` (the harness greps the
+  build dir for an executable matching `*-rdl-adapter`).
+* **How the harness builds you:** cvc5 ships **inside this repo** as a
+  pre-built static `libcxx-static` package whose `.a` archives
+  reference LLVM `libc++` symbols (`std::__1::...`), **not** GNU
+  `libstdc++`. Use the harness-provided `CVC5_INCLUDE_DIR` /
+  `CVC5_LIBRARY_DIR` (see `fairness_rules.md` §I) and force the
+  toolchain over to clang+libc++ inside your CMakeLists. The trial
+  machine has `clang++ 18` and `libc++-18-dev` pre-installed.
+  Skeleton:
+
+  ```cmake
+  cmake_minimum_required(VERSION 3.10)
+  project(cvc5_rdl_adapter CXX)
+  set(CMAKE_CXX_STANDARD 17)
+  # MANDATORY for the libcxx-static prebuilt cvc5 in this repo:
+  set(CMAKE_CXX_COMPILER clang++)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++")
+  add_executable(cvc5-rdl-adapter main.cpp)
+  target_include_directories(cvc5-rdl-adapter PRIVATE
+      "${CVC5_INCLUDE_DIR}")
+  target_link_directories(cvc5-rdl-adapter PRIVATE
+      "${CVC5_LIBRARY_DIR}")
+  target_link_libraries(cvc5-rdl-adapter PRIVATE
+      cvc5parser cvc5 picpolyxx picpoly cadical gmpxx gmp)
+  ```
+
+  Skipping the `-stdlib=libc++` directives will give you cryptic
+  `undefined reference to std::__1::*` linker errors from
+  `libcadical.a` and friends; do not fall back to gcc + libstdc++.
 
 ## Allowed / forbidden APIs
 
