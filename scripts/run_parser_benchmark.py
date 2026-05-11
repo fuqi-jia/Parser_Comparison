@@ -316,7 +316,7 @@ def main():
         "-j",
         type=int,
         default=None,
-        help="并行任务数（默认 24，避免打满 CPU；大机器可设 JOBS=64 等；--preset sat2026 默认 32）",
+        help="并行任务数（默认 24，避免打满 CPU；大机器可设 JOBS=64 等；--preset ase2026 默认 32）",
     )
     ap.add_argument("--exclude-parser", type=str, action="append", default=None, metavar="NAME",
                     help="排除指定 parser，不参与 benchmark（可多次指定，如 --exclude-parser native）")

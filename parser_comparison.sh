@@ -17,10 +17,10 @@ usage() {
 
       benchmark | bench
           Run the multi-parser parse-only benchmark.
-          Optional --preset sat2026 fixes timeout/memory/jobs (see scripts/experiment_presets.py).
+          Optional --preset ase2026 fixes timeout/memory/jobs (see scripts/experiment_presets.py).
           Same as: python3 scripts/run_parser_benchmark.py ...
           Example:
-            ./parser_comparison.sh benchmark --file-list results/file_list.txt --preset sat2026
+            ./parser_comparison.sh benchmark --file-list results/file_list.txt --preset ase2026
             ./parser_comparison.sh benchmark --file-list results/file_list.txt -j 64 --timeout 30
 
       plots
@@ -71,16 +71,18 @@ usage() {
           Writes results/native_z3_dual_path/*.csv and native_z3_dual_path_summary.md.
           Needs native_z3_dual_path (build-internal with Z3). Same as: python3 scripts/run_native_z3_dual_path_benchmark.py ...
           Example:
-            ./parser_comparison.sh dual-path --file-list results/file_list.txt --preset sat2026
+            ./parser_comparison.sh dual-path --file-list results/file_list.txt --preset ase2026
 
       somt-experiments | somt-only
           Run only SOMTParser-side experiments (no other parser drivers): multi-parser benchmark with
-          --only-parser native (forced last), then roundtrip, then robustness summary. Does not run
-          parse-vs-solve, dual-path, or build-external. Extra args are passed to benchmark and roundtrip
-          (same flags as those commands, e.g. --file-list, --preset sat2026, -j). Robustness uses default
-          results/parser_benchmark_table.csv unless you re-run: ./parser_comparison.sh robustness --benchmark-csv ...
+          --only-parser native (forced last), then roundtrip, then (best-effort) parse-vs-solve and dual-path,
+          then robustness summary. parse-vs-solve requires `z3_parse_vs_solve`; dual-path requires `native_z3_dual_path`.
+          If those binaries are not found, the step is skipped with a warning (the pipeline continues).
+          Extra args are passed to benchmark/roundtrip/parse-vs-solve/dual-path (same flags as those commands,
+          e.g. --file-list, --preset ase2026, -j). Robustness uses default results/parser_benchmark_table.csv unless
+          you re-run: ./parser_comparison.sh robustness --benchmark-csv ...
           Example:
-            ./parser_comparison.sh somt-experiments --file-list results/file_list.txt --preset sat2026
+            ./parser_comparison.sh somt-experiments --file-list results/file_list.txt --preset ase2026
 
       sampled
           One-shot sampled pipeline (sample → bench → recheck → summary → LaTeX).
@@ -226,9 +228,32 @@ case "${CMD}" in
         exec python3 "${SCRIPTS}/run_native_z3_dual_path_benchmark.py" "$@"
         ;;
     somt-experiments|somt-only)
-        echo "== SOMTParser-only: benchmark (native) → roundtrip → robustness ==" >&2
+        echo "== SOMTParser-only: benchmark (native) → roundtrip → parse-vs-solve → dual-path → robustness ==" >&2
+
+        have_exe() {
+            local x="$1"
+            if [[ -z "${x}" ]]; then return 1; fi
+            if [[ -x "${x}" ]]; then return 0; fi
+            command -v "${x}" >/dev/null 2>&1
+        }
+
         python3 "${SCRIPTS}/run_parser_benchmark.py" "$@" --only-parser native
         python3 "${SCRIPTS}/run_roundtrip_benchmark.py" "$@"
+
+        # Best-effort: Z3 parse-vs-solve (requires external/z3/z3_parse_vs_solve or PATH)
+        if have_exe "${ROOT}/external/z3/z3_parse_vs_solve" || have_exe "z3_parse_vs_solve"; then
+            python3 "${SCRIPTS}/run_parse_vs_solve_benchmark.py" "$@"
+        else
+            echo "warn: skip parse-vs-solve (missing z3_parse_vs_solve binary)" >&2
+        fi
+
+        # Best-effort: native dual-path (requires build/native_z3_dual_path or PATH)
+        if have_exe "${ROOT}/build/native_z3_dual_path" || have_exe "${ROOT}/native_z3_dual_path" || have_exe "native_z3_dual_path"; then
+            python3 "${SCRIPTS}/run_native_z3_dual_path_benchmark.py" "$@"
+        else
+            echo "warn: skip dual-path (missing native_z3_dual_path binary; build-internal with Z3)" >&2
+        fi
+
         python3 "${SCRIPTS}/summarize_robustness.py"
         ;;
     sampled)

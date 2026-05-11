@@ -21,13 +21,13 @@ chmod +x ./parser_comparison.sh    # once, if your clone is not executable
 
 | Command | Calls | Purpose |
 |--------|--------|---------|
-| `benchmark` / `bench` | `scripts/run_parser_benchmark.py` | Multi-parser parse-only run over a file list; optional `--preset sat2026` (alias `--param`) |
+| `benchmark` / `bench` | `scripts/run_parser_benchmark.py` | Multi-parser parse-only run over a file list; optional `--preset ase2026` (alias `--param`) |
 | `plots` | `scripts/gen_all_tables_and_plots.sh` | Per-theory summaries, `results/summary/frontend_table.tex`, scatter PNGs under `results/frontend_scatter/` |
 | `readme` | `scripts/gen_readme_tables.py` | Paper tables from `frontend_table.tex` + splice standalone summaries; add `--readme README.md` |
-| `presets` / `preset-list` | `scripts/experiment_presets.py` | List named `--preset` bundles (`sat2026`, …) |
-| `roundtrip` | `scripts/run_roundtrip_benchmark.py` | **Same-engine** round-trip: SOMTParser (`native`) parse → `dumpSMT2` → reparse (differs from cross-parser `benchmark`); `results/roundtrip/`; optional `--preset sat2026` |
+| `presets` / `preset-list` | `scripts/experiment_presets.py` | List named `--preset` bundles (`ase2026`, …) |
+| `roundtrip` | `scripts/run_roundtrip_benchmark.py` | **Same-engine** round-trip: SOMTParser (`native`) parse → `dumpSMT2` → reparse (differs from cross-parser `benchmark`); `results/roundtrip/`; optional `--preset ase2026` |
 | `robustness` | `scripts/summarize_robustness.py` | SOMTParser (`native`) `ok`/`timeout`/`fail` by theory; `results/robustness/robustness_summary.md`; merges `roundtrip_table.csv` if present |
-| `parse-vs-solve` | `scripts/run_parse_vs_solve_benchmark.py` | Z3 parse vs `check_sat` wall clock; `results/parse_vs_solve/` (`*.csv`, `parse_vs_solve_summary.md`); optional `--preset sat2026` |
+| `parse-vs-solve` | `scripts/run_parse_vs_solve_benchmark.py` | Z3 parse vs `check_sat` wall clock; `results/parse_vs_solve/` (`*.csv`, `parse_vs_solve_summary.md`); optional `--preset ase2026` |
 | `dual-path` | `scripts/run_native_z3_dual_path_benchmark.py` | **SOMTParser + Z3:** Z3 on original vs SOMTParser `dumpSMT2` then Z3 on dump; `verdict_disagree` only on sat↔unsat; `results/native_z3_dual_path/`; needs `build/native_z3_dual_path` + Z3 |
 | `sampled` | `scripts/run_sampled_full.sh` | Sampled pipeline (`--fresh`, `--skip-sample`, …) |
 | `build` | `scripts/build_all.sh` | **Full** build: `build-internal` then `build-external` (extra args → native `cmake --build` only) |
@@ -62,19 +62,19 @@ The same **logical** limits apply across all heavy runs in this repo (multi-pars
 | `python3 scripts/re_run_parser_benchmark.py` | `--timeout`, `--memory-mb` (see `--help`) | **10** s, **4096** MiB |
 | `./parser_comparison.sh sampled` | Benchmark / recheck invoke Python drivers with flags in [`scripts/run_sampled_full.sh`](scripts/run_sampled_full.sh) (e.g. `--timeout 10 --memory-mb 4096`; no `-j` → benchmark default **24**) | align that script with the same budgets you use elsewhere |
 
-**Named bundles:** `--preset` / `--param` (e.g. `sat2026`) on supported drivers loads a bundle from [`scripts/experiment_presets.py`](scripts/experiment_presets.py); run `./parser_comparison.sh presets` to list names. Explicit flags always **override** the preset. For **`sat2026`**: `timeout` / `memory_mb` / `jobs` apply to **`benchmark`** and **`roundtrip`**; **`parse-vs-solve`** uses the same `memory_mb` and `jobs` but **not** the 30 s parse-instance cap—its time limits are `solve_timeout_ms` (inside Z3) and `wall_timeout` (Python wrapper around the whole child). **`dual-path`** uses `memory_mb`, `jobs`, `solve_timeout_ms`, and `dual_path_outer_sec` (subprocess wall for two Z3 `check` calls plus native dump). **`robustness`** only aggregates CSVs and has no `--preset` (use a benchmark table produced with the preset you care about).
+**Named bundles:** `--preset` / `--param` (e.g. `ase2026`) on supported drivers loads a bundle from [`scripts/experiment_presets.py`](scripts/experiment_presets.py); run `./parser_comparison.sh presets` to list names. Explicit flags always **override** the preset. For **`ase2026`**: `timeout` / `memory_mb` / `jobs` apply to **`benchmark`** and **`roundtrip`**; **`parse-vs-solve`** uses the same `memory_mb` and `jobs` but **not** the 30 s parse-instance cap—its time limits are `solve_timeout_ms` (inside Z3) and `wall_timeout` (Python wrapper around the whole child). **`dual-path`** uses `memory_mb`, `jobs`, `solve_timeout_ms`, and `dual_path_outer_sec` (subprocess wall for two Z3 `check` calls plus native dump). **`robustness`** only aggregates CSVs and has no `--preset` (use a benchmark table produced with the preset you care about).
 
 ### Typical workflow
 
 1. **Fetch deps:** `./parser_comparison.sh prepare` (or `prepare --parsers-only` / `prepare --benchmark-only` as needed).  
 2. **Compile:** `./parser_comparison.sh build` (native + external), or split as `./parser_comparison.sh build-internal` then `./parser_comparison.sh build-external` (same as `build-parsers`). Use `BUILD_DIR=/path ./parser_comparison.sh build-internal` if you want a non-default CMake tree.  
 3. **Benchmark:** prepare `results/file_list.txt` (one `.smt2` per line), then e.g.  
-   `./parser_comparison.sh benchmark --file-list results/file_list.txt --preset sat2026`  
+   `./parser_comparison.sh benchmark --file-list results/file_list.txt --preset ase2026`  
    (or set `--timeout` / `--memory-mb` / `-j` explicitly; see **Common experiment settings**.)  
 4. **Tables and figures:** `./parser_comparison.sh plots`  
 5. **Refresh the results section of this README:** `./parser_comparison.sh readme --readme README.md` (paper tables + standalone experiment blocks).
 
-**Paper-style full-artifact run:** use `--preset sat2026` on `benchmark`, `roundtrip`, `parse-vs-solve`, and `dual-path`. Other environment notes: Ubuntu-class OS, `-O3`, single-threaded *per parser invocation* inside the driver unless you change build flags.
+**Paper-style full-artifact run:** use `--preset ase2026` on `benchmark`, `roundtrip`, `parse-vs-solve`, and `dual-path`. Other environment notes: Ubuntu-class OS, `-O3`, single-threaded *per parser invocation* inside the driver unless you change build flags.
 
 ### More documentation
 
@@ -187,9 +187,9 @@ Two experimental settings are common in front-end work: **(A) same-engine parse 
 
 | Status | Count | Share |
 | --- | ---: | ---: |
-| `ok` | 149744 | 92.4431% |
-| `timeout` | 10907 | 6.7333% |
-| `mismatch` | 1330 | 0.8211% |
+| `ok` | 149758 | 92.4518% |
+| `timeout` | 10885 | 6.7198% |
+| `mismatch` | 1338 | 0.8260% |
 | `fail` | 4 | 0.0025% |
 
 ### By theory family
@@ -197,9 +197,9 @@ Two experimental settings are common in front-end work: **(A) same-engine parse 
 | Theory | ok | mismatch | fail | timeout | other | total |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | QF_AX | 454 | 97 | 0 | 0 | 0 | 551 |
-| QF_BV | 36879 | 1208 | 4 | 8100 | 0 | 46191 |
+| QF_BV | 36888 | 1216 | 4 | 8083 | 0 | 46191 |
 | QF_FP | 40381 | 25 | 0 | 0 | 0 | 40406 |
-| QF_LIA | 10506 | 0 | 0 | 2800 | 0 | 13306 |
+| QF_LIA | 10511 | 0 | 0 | 2795 | 0 | 13306 |
 | QF_LRA | 1749 | 0 | 0 | 4 | 0 | 1753 |
 | QF_NIA | 25452 | 0 | 0 | 0 | 0 | 25452 |
 | QF_NRA | 12151 | 0 | 0 | 3 | 0 | 12154 |
@@ -225,9 +225,9 @@ Per-theory counts of SOMTParser (`native`) front-end outcomes (`ok`, `timeout`, 
 | Theory | ok | timeout | fail | other | total | fail%+timeout% |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | QF_AX | 551 | 0 | 0 | 0 | 551 | 0.0000% |
-| QF_BV | 46139 | 52 | 0 | 0 | 46191 | 0.1126% |
+| QF_BV | 46142 | 49 | 0 | 0 | 46191 | 0.1061% |
 | QF_FP | 40406 | 0 | 0 | 0 | 40406 | 0.0000% |
-| QF_LIA | 13306 | 0 | 0 | 0 | 13306 | 0.0000% |
+| QF_LIA | 13303 | 3 | 0 | 0 | 13306 | 0.0225% |
 | QF_LRA | 1753 | 0 | 0 | 0 | 1753 | 0.0000% |
 | QF_NIA | 25452 | 0 | 0 | 0 | 25452 | 0.0000% |
 | QF_NRA | 12152 | 2 | 0 | 0 | 12154 | 0.0165% |
@@ -238,15 +238,15 @@ Per-theory counts of SOMTParser (`native`) front-end outcomes (`ok`, `timeout`, 
 | Theory | roundtrip_ok | mismatch | fail | timeout |
 | --- | ---: | ---: | ---: | ---: |
 | QF_AX | 454 | 97 | 0 | 0 |
-| QF_BV | 36879 | 1208 | 4 | 8100 |
+| QF_BV | 36888 | 1216 | 4 | 8083 |
 | QF_FP | 40381 | 25 | 0 | 0 |
-| QF_LIA | 10506 | 0 | 0 | 2800 |
+| QF_LIA | 10511 | 0 | 0 | 2795 |
 | QF_LRA | 1749 | 0 | 0 | 4 |
 | QF_NIA | 25452 | 0 | 0 | 0 |
 | QF_NRA | 12151 | 0 | 0 | 3 |
 | QF_S | 22172 | 0 | 0 | 0 |
 
-Round-trip totals: ok=149744 mismatch=1330 fail=4 timeout=10907
+Round-trip totals: ok=149758 mismatch=1338 fail=4 timeout=10885
 
 ---
 

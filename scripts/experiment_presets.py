@@ -17,7 +17,7 @@ import json
 import sys
 
 PRESETS = {
-    "sat2026": {
+    "ase2026": {
         "_doc": (
             "Paper-style settings: 30 s per-instance parse cap, 4 GiB RLIMIT_AS, 32 workers "
             "for multi-parser benchmark + same-engine roundtrip (see run_parser_benchmark / "
@@ -46,7 +46,7 @@ def add_preset_arguments(parser):
         dest="preset",
         metavar="NAME",
         default=None,
-        help="Named parameter bundle (e.g. sat2026). See scripts/experiment_presets.py.",
+        help="Named parameter bundle (e.g. ase2026). See scripts/experiment_presets.py.",
     )
 
 
