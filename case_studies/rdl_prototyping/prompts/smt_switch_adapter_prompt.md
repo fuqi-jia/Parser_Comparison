@@ -45,8 +45,10 @@ sort kind. **No** `Solver::check_sat`, `check_sat_assuming`,
 ## smt-switch-specific subtleties
 
 * The cleanest route is a small `SmtLibReader` subclass that overrides
-  `assert(...)` to push terms into a vector, then walk that vector
-  outside the reader.
+  the virtual `void assert_formula(const Term&)` callback to push
+  terms into a vector, then walks that vector outside the reader.
+  The function is **`assert_formula`** (the C++ keyword `assert`
+  cannot be a method name — do not write `void assert(...) override`).
 * **Use the cvc5 back-end (`Cvc5SolverFactory`)** for parsing — that's
   the only solver factory whose `.so` is vendored. Asking for
   `Z3SolverFactory` will fail to link because `libsmt-switch-z3.so`

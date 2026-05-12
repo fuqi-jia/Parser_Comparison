@@ -41,15 +41,23 @@ model API, or built-in DL/IDL/RDL theory entry points.
 
 ## SOMTParser-specific subtleties
 
-* `Parser` returns `TermPtr` objects rooted at the assertion list. Walk
-  with `getKind()` / `getChild(i)`; the kind enum lives in
-  `somtparser/core/kind.h` (read it, do not paraphrase). Treat
-  `Kind::AND` recursively until you hit a leaf comparison.
-* `(- x y)` may arrive as a binary `Kind::SUB` *or* an n-ary
-  `Kind::ADD` whose second child has been pre-multiplied by `(- 1)` —
-  canonicalise both shapes into a single `lhs - rhs`.
-* SOMTParser's numeral accessor returns the exact rational as text;
-  pass it straight through to the JSON `bound` field (no `double`).
+* `Parser::getAssertions()` returns
+  `std::vector<std::shared_ptr<DAGNode>>` (there is **no** `TermPtr`
+  type in this library). Walk each node with `node->getKind()` /
+  `node->getChildrenSize()` / `node->getChild(int)`; the kind enum is
+  `SOMTParser::NODE_KIND` and its enumerators are `NT_*` (e.g.
+  `NT_AND`, `NT_LE`, `NT_SUB`), not `Kind::*`. The library also
+  ships convenience predicates on `DAGNode`: `isAnd()`, `isLe()`,
+  `isLt()`, `isGe()`, `isGt()`, `isEq()`, `isSub()`, `isAdd()`,
+  `isNeg()`, `isNumeral()`, `isVar()`. Prefer those over comparing
+  enum tags by hand. See `api_excerpts/somtparser.md` §3 / §4 for the
+  full surface.
+* `(- x y)` may arrive as a binary `NT_SUB` *or* as `NT_ADD` whose
+  second child is `(NT_NEG y)` — canonicalise both shapes into a
+  single `lhs - rhs`.
+* Numeral literals are exact rational text; `node->getName()` returns
+  that text verbatim — pass it straight through to the JSON `bound`
+  field (no `double`).
 
 ## Done criteria
 

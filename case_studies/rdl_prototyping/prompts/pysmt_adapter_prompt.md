@@ -25,14 +25,20 @@ type queries via `node.get_type()`. **No**
 
 ## pySMT-specific subtleties
 
-* `SmtLibParser().get_script(file)` yields a `SmtLibScript`; iterate
-  `script.commands` and pick `name == "assert"` to grab assertion
-  bodies.
-* `node.constant_value()` already returns a `Fraction`; `str(...)` it
-  for the JSON `bound` field, no manual reconstruction needed.
-* Inspect the AST with `node.node_type()` from `pysmt.operators`. The
-  important kinds are `AND`, `LE`, `LT`, `EQUALS`, `MINUS`, `PLUS`,
-  `TIMES`, `SYMBOL`, `REAL_CONSTANT`, `INT_CONSTANT`.
+* `SmtLibParser().get_script_fname(path)` (or `get_script(file_obj)`)
+  yields a `SmtLibScript`. The shortest way to harvest assertions is
+  `[c.args[0] for c in script.filter_by_command_name(["assert"])]`;
+  iterating `script.commands` and filtering on `c.name == "assert"`
+  works too.
+* `node.constant_value()` already returns a `fractions.Fraction` for
+  `is_real_constant()` nodes (and a `int` for `is_int_constant()`);
+  `str(...)` it for the JSON `bound` field, no manual reconstruction
+  needed.
+* Inspect the AST with `node.is_and()` / `is_le()` / `is_lt()` /
+  `is_ge()` / `is_gt()` / `is_equals()` / `is_minus()` / `is_plus()`
+  / `is_times()` / `is_symbol()` / `is_real_constant()` /
+  `is_int_constant()`. These are faster and clearer than a single
+  `node.node_type() == op.LE` ladder, but both work.
 * For `(>= a b)` and `(> a b)` rewrites, swap and negate as
   `base_task.md` describes; pySMT does **not** automatically
   canonicalise these into `<= / <`.

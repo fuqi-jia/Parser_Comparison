@@ -43,24 +43,32 @@
 ## Allowed / forbidden APIs
 
 See `fairness_rules.md` §B–§C and `api_excerpts/cvc5_cpp.md`. Summary:
-`TermManager`, `cvc5::parser::Parser` (or the newer `InputParser`
-wrapper), `Term::getKind()` / `getNumChildren()` / `operator[]`,
-`Term::getRealValue()` / numeral string accessors, sort queries.
-**No** `cvc5::Solver::checkSat`, `getValue`, `getModel`, `simplify`,
-optimisation, or anything inside `cvc5::theory::arith::idl`.
+`cvc5::Solver` (as **term factory only**), `cvc5::SymbolManager`,
+`cvc5::parser::InputParser`, `cvc5::parser::Command::invoke`,
+`Term::getKind()` / `getNumChildren()` / `operator[](size_t)`,
+`Term::getRealValue()` / `getIntegerValue()` (both `std::string`),
+sort queries. **No** `cvc5::Solver::checkSat`, `getValue`,
+`getModel`, `simplify`, optimisation, or anything inside
+`cvc5::theory::arith::idl`.
 
 ## cvc5-specific subtleties
 
-* Drive the parser with `appendIncrementalStringInput` +
-  `parseAndExecute`, *or* use the `InputParser` wrapper if your cvc5
-  version exposes it. Either is fine — pick one.
+* The vendored cvc5 package exposes the modern `cvc5::parser::InputParser`
+  + `Command::invoke` model. Drive it with `setFileInput` →
+  `while (!ip.done()) ip.nextCommand().invoke(&solver, &sm);`. There
+  is **no** `parseAndExecute` / `appendIncrementalStringInput` short
+  cut on this build — the loop is the only supported entry point. See
+  `api_excerpts/cvc5_cpp.md` §2 for the literal snippet.
 * `Term::getKind()` returns a `cvc5::Kind` enum (`AND`, `LEQ`, `LT`,
   `GEQ`, `GT`, `EQUAL`, `SUB`, `ADD`, `NEG`, `MULT`, `CONST_RATIONAL`,
   …). Treat both `SUB` and `ADD-with-NEG` shapes as a difference.
-* `Term::getRealValue()` returns `(numerator, denominator)` as a
-  `std::pair`. For literals that exceed `int64_t`, fall back to the
-  string accessor so big-number anchors (see `dev_examples.md`)
-  round-trip losslessly.
+* `Term::getRealValue()` returns **`std::string`**, not a numerator /
+  denominator pair (older docs got that wrong). The lexical text
+  may be either `"p/q"` or a plain integer / decimal — pass it
+  unchanged to the JSON `bound` field. The pair-typed accessors are
+  `getReal32Value()` and `getReal64Value()` and both throw if the
+  rational does not fit in those bit widths, so they are unsafe for
+  the big-number anchors in `dev_examples.md`.
 * Reject anything not declared as `Real` in QF_RDL — query
   `term.getSort().isReal()`.
 
